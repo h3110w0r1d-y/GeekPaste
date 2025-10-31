@@ -1,0 +1,4 @@
+[*.kt]
+# 禁用屬性命名規則
+ktlint_standard_property-naming = disabled
+ktlint_standard_function-naming = disabled
