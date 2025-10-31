@@ -7,28 +7,42 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
 }
 
 android {
-    namespace = "com.h3110w0r1d.clipboardsync"
+    namespace = "com.h3110w0r1d.geekpaste"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.h3110w0r1d.clipboardsync"
+        applicationId = "com.h3110w0r1d.geekpaste"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "REPO_URL", "\"https://github.com/h3110w0r1d-y/GeekPaste\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            @Suppress("UnstableApiUsage")
+            vcsInfo.include = false
+            packaging {
+                resources {
+                    excludes += "META-INF/androidx/**"
+                    excludes += "META-INF/*.version"
+                    excludes += "META-INF/*.md"
+                    excludes += "DebugProbesKt.bin"
+                    excludes += "kotlin-tooling-metadata.json"
+                    excludes += "kotlin/**"
+                    excludes += "org/bouncycastle/**"
+                }
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -69,7 +83,11 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
+    implementation(libs.bouncycastle.provider)
+    implementation(libs.bouncycastle.pkix)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.serialization.json)
+
     kapt(libs.hilt.compiler)
+    compileOnly(files("libs/api-82.jar"))
 }
