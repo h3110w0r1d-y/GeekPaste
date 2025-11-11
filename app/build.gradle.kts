@@ -1,3 +1,5 @@
+import com.android.build.api.variant.FilterConfiguration
+import com.android.build.api.variant.impl.VariantOutputImpl
 import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -21,9 +23,18 @@ android {
         applicationId = "com.h3110w0r1d.geekpaste"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "0.0.1"
         buildConfigField("String", "REPO_URL", "\"https://github.com/h3110w0r1d-y/GeekPaste\"")
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            isUniversalApk = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
     }
 
     buildTypes {
@@ -49,6 +60,23 @@ android {
             )
         }
     }
+
+    androidComponents.onVariants { variant ->
+        var currentVersionName = defaultConfig.versionName
+
+        variant.outputs.forEach { output ->
+            output.versionName.set(currentVersionName)
+            if (output is VariantOutputImpl) {
+                val abi =
+                    output
+                        .getFilter(FilterConfiguration.FilterType.ABI)
+                        ?.identifier ?: "universal"
+                val apkName = "GeepPaste-$currentVersionName-$abi-${variant.buildType}.apk"
+                output.outputFileName.set(apkName)
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
