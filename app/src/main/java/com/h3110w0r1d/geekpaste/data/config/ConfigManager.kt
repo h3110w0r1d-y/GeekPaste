@@ -27,6 +27,9 @@ private object ConfigKeys {
     val nightModeEnabled = booleanPreferencesKey("night_mode_enabled")
     val pureBlackDarkTheme = booleanPreferencesKey("pure_black_dark_theme")
     val savedDevices = stringPreferencesKey("saved_devices")
+
+    // 下载路径
+    val downloadPath = stringPreferencesKey("download_path")
 }
 
 class ConfigManager(
@@ -53,6 +56,7 @@ class ConfigManager(
                         Json.decodeFromString<List<DeviceInfo>>(
                             preferences[ConfigKeys.savedDevices] ?: "[]",
                         ),
+                    downloadPath = preferences[ConfigKeys.downloadPath] ?: "",
                     isConfigInitialized = true,
                 )
             }.stateIn(
@@ -113,6 +117,7 @@ class ConfigManager(
             preferences[ConfigKeys.nightModeFollowSystem] = appConfig.nightModeFollowSystem
             preferences[ConfigKeys.nightModeEnabled] = appConfig.nightModeEnabled
             preferences[ConfigKeys.pureBlackDarkTheme] = appConfig.pureBlackDarkTheme
+            preferences[ConfigKeys.downloadPath] = appConfig.downloadPath
         }
     }
 }

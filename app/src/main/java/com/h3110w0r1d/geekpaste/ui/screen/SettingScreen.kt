@@ -2,7 +2,11 @@ package com.h3110w0r1d.geekpaste.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
@@ -15,15 +19,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.InvertColors
 import androidx.compose.material.icons.outlined.Merge
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.Scaffold
@@ -73,6 +80,26 @@ fun SettingScreen() {
         }
     var selectColorDialogOpened by remember { mutableStateOf(false) }
 
+    // SAF 目录选择器
+    val directoryPickerLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+        ) { uri ->
+            uri?.let {
+                // 持久化URI权限
+                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                try {
+                    context.contentResolver.takePersistableUriPermission(it, takeFlags)
+                    viewModel.updateAppConfig(
+                        appConfig.copy(
+                            downloadPath = it.toString(),
+                        ),
+                    )
+                } catch (_: Exception) {
+                }
+            }
+        }
+
     val themeColorNamesMap =
         hashMapOf(
             "amber" to stringResource(R.string.amber_theme),
@@ -118,6 +145,40 @@ fun SettingScreen() {
                     .padding(innerPadding)
                     .verticalScroll(scrollState),
         ) {
+            SettingItemGroup(stringResource(R.string.download))
+
+            SettingItem(
+                imageVector = Icons.Outlined.Download,
+                title = stringResource(R.string.download_path),
+                trailingContent = {
+                    if (appConfig.downloadPath == "") {
+                        IconButton(
+                            onClick = {
+                                viewModel.updateAppConfig(
+                                    appConfig.copy(
+                                        downloadPath = "",
+                                    ),
+                                )
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.SettingsBackupRestore,
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                },
+                description =
+                    if (appConfig.downloadPath.isEmpty()) {
+                        stringResource(R.string.download_path_default)
+                    } else {
+                        getReadablePathFromTreeUri(Uri.parse(appConfig.downloadPath))
+                    },
+                onClick = {
+                    directoryPickerLauncher.launch(null)
+                },
+            )
+
             SettingItemGroup(stringResource(R.string.appearance))
 
             SettingItem(
@@ -203,6 +264,7 @@ fun SettingScreen() {
                     )
                 },
             )
+
             SettingItemGroup(stringResource(R.string.about))
 
             SettingItem(
@@ -276,7 +338,7 @@ fun SettingScreen() {
                         Modifier
                             .padding(8.dp, 16.dp),
                 ) {
-                    items(themeColorKeys) { it ->
+                    items(themeColorKeys) {
                         ListItem(
                             leadingContent = {
                                 Icon(
@@ -350,4 +412,28 @@ fun SettingItem(
                 onClick = onClick,
             ),
     )
+}
+
+fun getReadablePathFromTreeUri(uri: Uri): String {
+    val docId = DocumentsContract.getTreeDocumentId(uri)
+    val parts = docId.split(":")
+
+    if (parts.size == 1) {
+        // 例如 primary
+        if (parts[0] == "primary") {
+            return "内部存储"
+        }
+        return "外部存储($docId)"
+    }
+
+    val volume = parts[0] // primary or 1234-5678(SD卡)
+    val relativePath = parts[1] // Download / Documents ...
+
+    val storageName =
+        when (volume.lowercase()) {
+            "primary" -> "内部存储"
+            else -> "外部存储($volume)"
+        }
+
+    return "$storageName/$relativePath"
 }

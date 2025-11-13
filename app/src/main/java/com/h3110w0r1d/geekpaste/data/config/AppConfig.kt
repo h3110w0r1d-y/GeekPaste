@@ -15,6 +15,8 @@ data class AppConfig(
     val pureBlackDarkTheme: Boolean = false,
     val isConfigInitialized: Boolean = false,
     val savedDevices: List<DeviceInfo> = listOf(),
+    // 下载路径相关配置
+    val downloadPath: String = "", // 空字符串表示使用默认Download目录
 )
 
 @OptIn(ExperimentalSerializationApi::class)

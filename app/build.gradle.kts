@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.bouncycastle.pkix)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.documentfile)
 
     kapt(libs.hilt.compiler)
     compileOnly(files("libs/api-82.jar"))
