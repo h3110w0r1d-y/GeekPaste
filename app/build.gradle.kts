@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.h3110w0r1d.geekpaste"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 36
         versionCode = 3
         versionName = "0.0.2"

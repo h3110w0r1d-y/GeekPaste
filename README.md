@@ -4,7 +4,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/h3110w0r1d-y/GeekPaste)](https://github.com/h3110w0r1d-y/GeekPaste/releases)
 [![CI/CD](https://github.com/h3110w0r1d-y/GeekPaste/actions/workflows/release.yml/badge.svg)](https://github.com/h3110w0r1d-y/GeekPaste/actions/workflows/release.yml)
-![Android](https://img.shields.io/badge/Android-8.0%2B-blue)
+![Android](https://img.shields.io/badge/Android-10%2B-blue)
 ![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
 ![License](https://img.shields.io/github/license/h3110w0r1d-y/GeekPaste)
 ![GitHub stars](https://img.shields.io/github/stars/h3110w0r1d-y/GeekPaste?style=social)
