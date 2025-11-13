@@ -24,7 +24,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GeekPaste">
         <activity
-            android:name=".MainActivity"
+            android:name=".activity.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.GeekPaste"
             android:launchMode="singleInstance">
@@ -35,7 +35,7 @@
         </activity>
 
         <activity
-            android:name=".ShareActivity"
+            android:name=".activity.ShareActivity"
             android:exported="true"
             android:theme="@style/Theme.GeekPaste"
             android:launchMode="standard">

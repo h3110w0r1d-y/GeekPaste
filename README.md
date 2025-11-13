@@ -16,7 +16,7 @@
 
 ### 🚧 软件还在开发中，目前Android与macOS的剪贴板同步功能可以正常使用
 
-基于低功耗蓝牙(BLE)的跨平台剪贴板同步软件。实现类似iPhone与macOS的丝滑同步体验。
+基于低功耗蓝牙(BLE)的跨平台剪贴板同步软件。实现类似iPhone与mac的丝滑同步体验。
 
 Android作为中心设备，macOS、Windows作为边缘设备。
 

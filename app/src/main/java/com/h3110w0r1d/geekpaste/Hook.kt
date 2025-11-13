@@ -111,15 +111,15 @@ class Hook : IXposedHookLoadPackage {
             },
         )
     }
-}
 
-inline fun <reified T> Any.get(field: String): T? =
-    try {
-        val clazz = this.javaClass
-        val declaredField = clazz.getDeclaredField(field)
-        declaredField.isAccessible = true
-        declaredField.get(this) as T
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
+    inline fun <reified T> Any.get(field: String): T? =
+        try {
+            val clazz = this.javaClass
+            val declaredField = clazz.getDeclaredField(field)
+            declaredField.isAccessible = true
+            declaredField.get(this) as T
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+}

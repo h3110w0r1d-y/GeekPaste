@@ -86,9 +86,11 @@ class BleManager(
         private const val RETRY_DELAY_MS = 100L // 重试间隔（毫秒）
 
         // MTU 配置
-        private const val DEFAULT_MTU_SIZE = 20 // 默认MTU大小
         private const val MAX_MTU_SIZE = 517 // 最大MTU大小
+        private const val DEFAULT_PAYLOAD_SIZE = 20 // 默认MTU大小
         private const val MAX_PAYLOAD_SIZE = 512 // 最大载荷大小
+
+        private const val LOG_TAG = "BleManager"
     }
 
     private var lastReceivedText = ""
@@ -99,10 +101,11 @@ class BleManager(
     private val pairingRequest = AssociationRequest.Builder().addDeviceFilter(bleFilter).build()
     val deviceManager = context.getSystemService(COMPANION_DEVICE_SERVICE) as CompanionDeviceManager
     private val bluetoothAdapter = (context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
-    private val connectedGattMap = mutableMapOf<String, BluetoothGatt>()
+    private val _connectedGattMap = MutableStateFlow<MutableMap<String, BluetoothGatt>>(mutableMapOf())
+    val connectedGattMap: StateFlow<MutableMap<String, BluetoothGatt>> = _connectedGattMap
     private val _connectedDevices = MutableStateFlow<MutableList<BluetoothDevice>>(mutableListOf())
     val connectedDevices: StateFlow<MutableList<BluetoothDevice>> = _connectedDevices
-    private val deviceMtuSizeMap = mutableMapOf<String, Int>()
+    private val devicePayloadSizeMap = mutableMapOf<String, Int>()
     private val fragmentHandler = BleDataFragmentHandler()
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
 
@@ -161,7 +164,7 @@ class BleManager(
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
             } ?: return
-        val gatt = connectedGattMap[device.address] ?: return
+        val gatt = _connectedGattMap.value[device.address] ?: return
         val bondState =
             intent.getIntExtra(
                 BluetoothDevice.EXTRA_BOND_STATE,
@@ -176,12 +179,32 @@ class BleManager(
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     suspend fun reconnectAll() {
-        connectedGattMap.keys.forEach { address ->
-            val gatt = connectedGattMap[address] ?: return@forEach
+        _connectedGattMap.value.keys.forEach { address ->
+            val gatt = _connectedGattMap.value[address] ?: return@forEach
             gatt.disconnect()
             gatt.close()
             val device = bluetoothAdapter.getRemoteDevice(address)
             connectToDevice(device, true)
+        }
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    fun disconnectDevice(address: String) {
+        val gatt = _connectedGattMap.value[address]
+        if (gatt != null) {
+            gatt.disconnect()
+            gatt.close()
+            _connectedGattMap.value =
+                _connectedGattMap.value
+                    .filter {
+                        it.key != address
+                    }.toMutableMap()
+            _connectedDevices.value =
+                _connectedDevices.value
+                    .filter {
+                        it.address != address
+                    }.toMutableList()
+            Log.i(LOG_TAG, "已断开设备连接: $address")
         }
     }
 
@@ -246,10 +269,10 @@ class BleManager(
                     lastReceivedText = bleData.data
                     val clip = ClipData.newPlainText("GeekPaste", bleData.data)
                     clipboardManager.setPrimaryClip(clip)
-                    Log.i("BLE_TEST", "已将接收到的文本设置到剪贴板: ${bleData.data}")
+                    Log.i(LOG_TAG, "已将接收到的文本设置到剪贴板: ${bleData.data}")
                 }
                 "get_cert" -> {
-                    Log.i("BLE_TEST", "收到 get_cert 请求，开始生成证书")
+                    Log.i(LOG_TAG, "收到 get_cert 请求，开始生成证书")
                     coroutineScope.launch {
                         try {
                             val tempCert = certManager.generateTempCertificate()
@@ -259,19 +282,19 @@ class BleManager(
                             val device = _connectedDevices.value.find { it.address == deviceAddress }
                             if (device != null) {
                                 sendDataToDevice(device, data)
-                                Log.i("BLE_TEST", "成功发送证书到设备 ${device.address}")
+                                Log.i(LOG_TAG, "成功发送证书到设备 ${device.address}")
                             }
                         } catch (e: Exception) {
-                            Log.e("BLE_TEST", "生成或发送证书失败: ${e.message}", e)
+                            Log.e(LOG_TAG, "生成或发送证书失败: ${e.message}", e)
                         }
                     }
                 }
                 else -> {
-                    Log.w("BLE_TEST", "未知的数据类型: ${bleData.type}")
+                    Log.w(LOG_TAG, "未知的数据类型: ${bleData.type}")
                 }
             }
         } catch (e: Exception) {
-            Log.e("BLE_TEST", "解析JSON失败: ${e.message}")
+            Log.e(LOG_TAG, "解析JSON失败: ${e.message}")
         }
     }
 
@@ -297,8 +320,8 @@ class BleManager(
         if (devices.isEmpty()) return
 
         devices.forEach { device ->
-            val gatt = connectedGattMap[device.address] ?: return@forEach
-            val mtu = deviceMtuSizeMap[device.address] ?: DEFAULT_MTU_SIZE
+            val gatt = _connectedGattMap.value[device.address] ?: return@forEach
+            val mtu = devicePayloadSizeMap[device.address] ?: DEFAULT_PAYLOAD_SIZE
             val characteristic = gatt.getDataCharacteristic() ?: return@forEach
 
             try {
@@ -312,7 +335,7 @@ class BleManager(
                             mtu,
                         ) { g, c, d -> writeCharacteristic(g, c, d, 0) }
                     } catch (e: Exception) {
-                        Log.e("BLE_TEST", "发送分片失败到 ${device.address}: ${e.message}", e)
+                        Log.e(LOG_TAG, "发送分片失败到 ${device.address}: ${e.message}", e)
                     }
                 }
             } catch (_: IllegalArgumentException) {
@@ -348,8 +371,8 @@ class BleManager(
         device: BluetoothDevice,
         data: ByteArray,
     ) {
-        val gatt = connectedGattMap[device.address] ?: return
-        val mtu = deviceMtuSizeMap[device.address] ?: DEFAULT_MTU_SIZE
+        val gatt = _connectedGattMap.value[device.address] ?: return
+        val mtu = devicePayloadSizeMap[device.address] ?: DEFAULT_PAYLOAD_SIZE
         val characteristic = gatt.getDataCharacteristic()
         if (characteristic == null) {
             _connectedDevices.value =
@@ -365,7 +388,7 @@ class BleManager(
                 writeCharacteristic(g, c, d, 0)
             }
         } catch (e: Exception) {
-            Log.e("BLE_TEST", "发送数据失败: ${e.message}", e)
+            Log.e(LOG_TAG, "发送数据失败: ${e.message}", e)
             throw e
         }
     }
@@ -381,7 +404,7 @@ class BleManager(
         val bleData = BleData(type = "text", data = text)
         val data = encodeToString(bleData).toByteArray(Charsets.UTF_8)
         sendDataToDevice(device, data)
-        Log.i("BLE_TEST", "成功发送文本到设备 ${device.address}")
+        Log.i(LOG_TAG, "成功发送文本到设备 ${device.address}")
     }
 
     /**
@@ -400,7 +423,7 @@ class BleManager(
         pubKey: String,
         files: List<FileInfoData>,
     ) {
-        if (!connectedGattMap.contains(device.address)) {
+        if (!_connectedGattMap.value.contains(device.address)) {
             throw Exception("设备未连接: ${device.address}")
         }
 
@@ -420,7 +443,7 @@ class BleManager(
         val bleData = BleData(type = "files", data = dataJson)
         val data = encodeToString(bleData).toByteArray(Charsets.UTF_8)
         sendDataToDevice(device, data)
-        Log.i("BLE_TEST", "成功发送文件信息到设备 ${device.address}")
+        Log.i(LOG_TAG, "成功发送文件信息到设备 ${device.address}")
     }
 
     fun startScan(scanCallback: ActivityResultLauncher<IntentSenderRequest>) {
@@ -445,18 +468,22 @@ class BleManager(
         device: BluetoothDevice,
         force: Boolean = false,
     ) {
-        if (connectedGattMap[device.address] != null && !force) {
+        if (_connectedGattMap.value[device.address] != null && !force) {
             return
         }
-        Log.i("BLE_TEST", "连接设备: ${device.address}")
+        Log.i(LOG_TAG, "连接设备: ${device.address}")
         configManager.addDevice(device.address)
-        connectedGattMap[device.address] =
+        val gatt =
             device.connectGatt(
                 context,
                 true,
                 gattCallback,
                 BluetoothDevice.TRANSPORT_LE,
             )
+        _connectedGattMap.value =
+            _connectedGattMap.value.toMutableMap().also {
+                it[device.address] = gatt
+            }
     }
 
     private val gattCallback =
@@ -520,11 +547,11 @@ class BleManager(
     ) {
         when (state) {
             BluetoothProfile.STATE_CONNECTED -> {
-                Log.i("BLE_TEST", "GATT Connected: ${gatt.device.address}")
+                Log.i(LOG_TAG, "GATT Connected: ${gatt.device.address}")
                 val deviceAddress = gatt.device.address
                 // 如果设备还没有MTU值，设置默认值
-                if (!deviceMtuSizeMap.containsKey(deviceAddress)) {
-                    deviceMtuSizeMap[deviceAddress] = DEFAULT_MTU_SIZE
+                if (!devicePayloadSizeMap.containsKey(deviceAddress)) {
+                    devicePayloadSizeMap[deviceAddress] = DEFAULT_PAYLOAD_SIZE
                 }
                 gatt.requestMtu(MAX_MTU_SIZE)
                 when (gatt.device.bondState) {
@@ -534,14 +561,14 @@ class BleManager(
                 }
             }
             BluetoothProfile.STATE_DISCONNECTED -> {
-                Log.i("BLE_TEST", "GATT Disconnected: ${gatt.device.address}")
+                Log.i(LOG_TAG, "GATT Disconnected: ${gatt.device.address}")
                 val deviceAddress = gatt.device.address
                 _connectedDevices.value =
                     _connectedDevices.value
                         .filter {
                             it != gatt.device
                         }.toMutableList()
-                deviceMtuSizeMap.remove(deviceAddress)
+                devicePayloadSizeMap.remove(deviceAddress)
                 fragmentHandler.clearDeviceFragments(deviceAddress)
             }
         }
@@ -558,8 +585,8 @@ class BleManager(
         if (status == BluetoothGatt.GATT_SUCCESS) {
             val deviceAddress = gatt.device.address
             val payloadSize = min(mtu - 3, MAX_PAYLOAD_SIZE)
-            deviceMtuSizeMap[deviceAddress] = payloadSize
-            Log.i("BLE_TEST", "设备 $deviceAddress MTU 更新为 $mtu, payloadSize: $payloadSize")
+            devicePayloadSizeMap[deviceAddress] = payloadSize
+            Log.i(LOG_TAG, "设备 $deviceAddress MTU 更新为 $mtu, payloadSize: $payloadSize")
         }
     }
 
@@ -575,16 +602,16 @@ class BleManager(
         if (descriptor.uuid == CCCD_UUID) {
             when (status) {
                 BluetoothGatt.GATT_SUCCESS -> {
-                    Log.i("BLE_TEST", "CCCD写入成功，等待指示数据")
+                    Log.i(LOG_TAG, "CCCD写入成功，等待指示数据")
                 }
                 BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION,
                 BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION,
                 -> {
-                    Log.i("BLE_TEST", "需要配对/加密，发起配对后重试")
+                    Log.i(LOG_TAG, "需要配对/加密，发起配对后重试")
                     gatt.device.createBond()
                 }
                 else -> {
-                    Log.w("BLE_TEST", "CCCD写入失败，status=$status")
+                    Log.w(LOG_TAG, "CCCD写入失败，status=$status")
                 }
             }
         }
@@ -611,7 +638,7 @@ class BleManager(
                 BluetoothGattDescriptor.ENABLE_INDICATION_VALUE,
             )
         if (writeResult) {
-            Log.i("BLE_TEST", "已订阅")
+            Log.i(LOG_TAG, "已订阅")
             // 优化：检查是否存在，避免不必要的列表创建
             val currentDevices = _connectedDevices.value
             if (currentDevices.none { it.address == gatt.device.address }) {

@@ -5,15 +5,11 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.h3110w0r1d.geekpaste.model.DownloadStatus
-import com.h3110w0r1d.geekpaste.model.FileDownloadProgress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json.Default.decodeFromString
@@ -123,7 +119,7 @@ data class EndpointInfo(
     fun updateProgress(newDownloadedBytes: Long): EndpointInfo {
         val newStatus =
             when {
-                newDownloadedBytes >= fileSize && fileSize > 0 -> DownloadStatus.COMPLETED
+                fileSize in 1..newDownloadedBytes -> DownloadStatus.COMPLETED
                 newDownloadedBytes > 0 -> DownloadStatus.DOWNLOADING
                 else -> status // 保持当前状态
             }
@@ -152,102 +148,83 @@ class WebServer(
     // 存储每个endpoint的信息（包含文件源和下载进度）
     private val endpointInfoMap = ConcurrentHashMap<String, MutableStateFlow<EndpointInfo>>()
 
+    // 对外暴露的整个 endpoint map 的 StateFlow
+    private val _allEndpointInfo = MutableStateFlow<Map<String, EndpointInfo>>(emptyMap())
+    val allEndpointInfo: StateFlow<Map<String, EndpointInfo>> = _allEndpointInfo
+
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    /**
+     * 更新整个 endpoint map 的状态
+     * 当添加、删除或修改 endpoint 时调用此方法
+     */
+    private fun updateAllEndpointInfo() {
+        val currentMap = endpointInfoMap.mapValues { it.value.value }
+        _allEndpointInfo.value = currentMap
+    }
+
+    private fun notFoundResponse(): Response = newFixedLengthResponse(Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
+
+    private fun internalErrorResponse(): Response = newFixedLengthResponse(Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Internal Error")
+
+    private fun okResponse(): Response = newFixedLengthResponse(Status.OK, MIME_PLAINTEXT, "ok")
+
+    private fun notModified(): Response = newFixedLengthResponse(Status.NOT_MODIFIED, MIME_PLAINTEXT, "")
+
     /**
      * 添加一个 endpoint，用于传输指定的文件（兼容现有方式）
-     * @param path endpoint 路径，例如 "/file"
+     * @param endpoint endpoint 标识符（现在使用 UUID）
      * @param file 要传输的文件
      */
     fun addEndpoint(
-        path: String,
+        endpoint: String,
         file: File,
     ) {
-        val normalizedPath = normalizePath(path)
         val fileSource = FileSource.PhysicalFile(file)
         val endpointInfo =
             EndpointInfo(
-                endpoint = normalizedPath,
+                endpoint = endpoint,
                 fileSource = fileSource,
                 status = DownloadStatus.NOT_STARTED,
             )
-        endpointInfoMap[normalizedPath] = MutableStateFlow(endpointInfo)
-        Log.d(TAG, "添加 endpoint (File): $normalizedPath -> ${file.absolutePath}")
+        endpointInfoMap[endpoint] = MutableStateFlow(endpointInfo)
+        updateAllEndpointInfo()
+        Log.d(TAG, "添加 endpoint (File): $endpoint -> ${file.absolutePath}")
     }
 
     /**
      * 添加一个 endpoint，从URI直接传输文件（无需创建临时文件）
-     * @param path endpoint 路径，例如 "/file"
+     * @param endpoint endpoint 标识符（现在使用 UUID）
      * @param uri 文件的URI
      * @param fileName 文件名
      * @param fileSize 文件大小（字节）
      */
-    fun addEndpointFromUri(
-        path: String,
+    fun addEndpoint(
+        endpoint: String,
         uri: Uri,
         fileName: String,
         fileSize: Long,
     ) {
-        val normalizedPath = normalizePath(path)
         val fileSource = FileSource.UriFile(uri, fileName, fileSize)
         val endpointInfo =
             EndpointInfo(
-                endpoint = normalizedPath,
+                endpoint = endpoint,
                 fileSource = fileSource,
                 status = DownloadStatus.NOT_STARTED,
             )
-        endpointInfoMap[normalizedPath] = MutableStateFlow(endpointInfo)
-        Log.d(TAG, "添加 endpoint (URI): $normalizedPath -> $uri ($fileName, $fileSize bytes)")
+        endpointInfoMap[endpoint] = MutableStateFlow(endpointInfo)
+        updateAllEndpointInfo()
+        Log.d(TAG, "添加 endpoint (URI): $endpoint -> $uri ($fileName, $fileSize bytes)")
     }
 
     /**
      * 移除一个 endpoint
-     * @param path endpoint 路径
+     * @param endpoint endpoint 标识符
      */
-    fun removeEndpoint(path: String) {
-        val normalizedPath = normalizePath(path)
-        endpointInfoMap.remove(normalizedPath)
-        Log.d(TAG, "移除 endpoint: $normalizedPath")
-    }
-
-    /**
-     * 获取指定endpoint的下载进度StateFlow
-     * @param endpoint endpoint路径
-     * @return 下载进度的StateFlow（转换为FileDownloadProgress），如果endpoint不存在则返回null
-     */
-    fun getDownloadProgress(endpoint: String): StateFlow<FileDownloadProgress>? {
-        val normalizedPath = normalizePath(endpoint)
-        val endpointInfoFlow = endpointInfoMap[normalizedPath] ?: return null
-
-        // 将 EndpointInfo 转换为 FileDownloadProgress
-        return endpointInfoFlow
-            .map { info ->
-                FileDownloadProgress(
-                    endpoint = info.endpoint,
-                    status = info.status,
-                    downloadedBytes = info.downloadedBytes,
-                )
-            }.stateIn(
-                scope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
-                started = SharingStarted.Eagerly,
-                initialValue =
-                    FileDownloadProgress(
-                        endpoint = endpointInfoFlow.value.endpoint,
-                        status = endpointInfoFlow.value.status,
-                        downloadedBytes = endpointInfoFlow.value.downloadedBytes,
-                    ),
-            )
-    }
-
-    /**
-     * 获取所有已注册的 endpoint
-     */
-    fun getEndpoints(): Set<String> = endpointInfoMap.keys.toSet()
-
-    /**
-     * 获取endpoint的文件源
-     */
-    private fun getFileSource(endpoint: String): FileSource? {
-        val normalizedPath = normalizePath(endpoint)
-        return endpointInfoMap[normalizedPath]?.value?.fileSource
+    fun removeEndpoint(endpoint: String) {
+        endpointInfoMap.remove(endpoint)
+        updateAllEndpointInfo()
+        Log.d(TAG, "移除 endpoint: $endpoint")
     }
 
     /**
@@ -293,14 +270,14 @@ class WebServer(
     }
 
     override fun serve(session: HTTPSession): Response {
-        val uri = session.getUri() ?: return newFixedLengthResponse(Status.INTERNAL_ERROR, MIME_PLAINTEXT, "error")
-        val method = session.getMethod() ?: return newFixedLengthResponse(Status.INTERNAL_ERROR, MIME_PLAINTEXT, "error")
+        val uri = session.getUri() ?: return internalErrorResponse()
+        val method = session.getMethod() ?: return internalErrorResponse()
 
         Log.d(TAG, "收到请求: $method $uri")
 
         // 处理 /ping 端点
         if (uri == "/ping") {
-            return newFixedLengthResponse(Status.OK, MIME_PLAINTEXT, "ok")
+            return okResponse()
         }
 
         // 处理 /progress 端点 - 客户端上报下载进度
@@ -309,8 +286,15 @@ class WebServer(
         }
 
         // 处理动态注册的 endpoint
-        val normalizedUri = normalizePath(uri)
-        val endpointInfoFlow = endpointInfoMap[normalizedUri]
+        // 如果是 /share/uuid 格式，提取 uuid 作为 endpoint
+        val endpoint =
+            if (uri.startsWith("/share/")) {
+                uri.substring("/share/".length)
+            } else {
+                return notFoundResponse()
+            }
+
+        val endpointInfoFlow = endpointInfoMap[endpoint]
 
         if (endpointInfoFlow != null) {
             val endpointInfo = endpointInfoFlow.value
@@ -319,6 +303,7 @@ class WebServer(
             // 在文件请求开始时，设置状态为下载中（如果不是 HEAD 请求）
             if (method.name != "HEAD" && endpointInfo.status == DownloadStatus.NOT_STARTED) {
                 endpointInfoFlow.value = endpointInfo.setDownloading()
+                updateAllEndpointInfo()
                 Log.d(TAG, "文件请求开始，设置状态为下载中: ${endpointInfo.fileName}")
             }
 
@@ -327,22 +312,14 @@ class WebServer(
                 val file = fileSource.file
                 if (!file.exists()) {
                     Log.w(TAG, "文件不存在: ${file.absolutePath}，移除 endpoint")
-                    removeEndpoint(normalizedUri)
-                    return newFixedLengthResponse(
-                        Status.NOT_FOUND,
-                        MIME_PLAINTEXT,
-                        "文件不存在",
-                    )
+                    removeEndpoint(endpoint)
+                    return notFoundResponse()
                 }
 
                 if (!file.isFile) {
                     Log.w(TAG, "路径不是文件: ${file.absolutePath}，移除 endpoint")
-                    removeEndpoint(normalizedUri)
-                    return newFixedLengthResponse(
-                        Status.BAD_REQUEST,
-                        MIME_PLAINTEXT,
-                        "路径不是文件",
-                    )
+                    removeEndpoint(endpoint)
+                    return notFoundResponse()
                 }
             }
 
@@ -392,7 +369,7 @@ class WebServer(
                         // and the startFrom of the range is satisfiable
                         // would return range from file
                         // respond with not-modified
-                        response = newFixedLengthResponse(Status.NOT_MODIFIED, mimeType, "")
+                        response = notModified()
                         response.addHeader("ETag", etag)
                         Log.d(TAG, "返回 304 Not Modified (range + if-none-match): ${fileSource.fileName}")
                         return response
@@ -438,7 +415,7 @@ class WebServer(
                         // full-file-fetch request
                         // would return entire file
                         // respond with not-modified
-                        response = newFixedLengthResponse(Status.NOT_MODIFIED, mimeType, "")
+                        response = notModified()
                         response.addHeader("ETag", etag)
                         Log.d(TAG, "返回 304 Not Modified (no range): ${fileSource.fileName}")
                         return response
@@ -446,7 +423,7 @@ class WebServer(
                         // range request that doesn't match current etag
                         // would return entire (different) file
                         // respond with not-modified
-                        response = newFixedLengthResponse(Status.NOT_MODIFIED, mimeType, "")
+                        response = notModified()
                         response.addHeader("ETag", etag)
                         Log.d(TAG, "返回 304 Not Modified (if-range mismatch): ${fileSource.fileName}")
                         return response
@@ -465,21 +442,13 @@ class WebServer(
             } catch (e: Exception) {
                 // 处理其他可能的异常（如 SecurityException 等）
                 Log.e(TAG, "处理文件请求时发生异常: ${fileSource.fileName}，移除 endpoint", e)
-                removeEndpoint(normalizedUri)
-                return newFixedLengthResponse(
-                    Status.INTERNAL_ERROR,
-                    MIME_PLAINTEXT,
-                    "处理文件请求失败: ${e.message}",
-                )
+                removeEndpoint(endpoint)
+                return internalErrorResponse()
             }
         }
 
         // 未找到匹配的 endpoint
-        return newFixedLengthResponse(
-            Status.NOT_FOUND,
-            MIME_PLAINTEXT,
-            "Not Found",
-        )
+        return notFoundResponse()
     }
 
     /**
@@ -513,61 +482,35 @@ class WebServer(
 
     /**
      * 处理客户端上报的下载进度
-     * 请求体格式：{"endpoint": "/share/xxx", "downloadedBytes": 1024}
+     * 请求体格式：{"endpoint": "uuid", "downloadedBytes": 1024}
      * 状态会自动根据 downloadedBytes 和文件大小判断（当 downloadedBytes >= fileSize 时自动设置为完成）
      */
     private fun handleProgressReport(session: HTTPSession): Response {
         try {
-            // 读取请求体
-            val contentLength = session.getBodySize()
-            if (contentLength <= 0) {
-                return newFixedLengthResponse(Status.BAD_REQUEST, MIME_PLAINTEXT, "缺少请求体")
-            }
-
             val bodyStr = session.getBody()
-            val request =
-                try {
-                    decodeFromString<ProgressReportRequest>(bodyStr)
-                } catch (e: Exception) {
-                    Log.e(TAG, "解析JSON失败: $bodyStr", e)
-                    return newFixedLengthResponse(
-                        Status.BAD_REQUEST,
-                        MIME_PLAINTEXT,
-                        "无效的JSON格式: ${e.message}",
-                    )
-                }
-
+            val request = decodeFromString<ProgressReportRequest>(bodyStr)
             val endpoint = request.endpoint
             val downloadedBytes = request.downloadedBytes
 
             // 更新进度
-            val normalizedPath = normalizePath(endpoint)
-            val endpointInfoFlow = endpointInfoMap[normalizedPath]
+            val endpointInfoFlow = endpointInfoMap[endpoint]
 
             if (endpointInfoFlow != null) {
                 // 使用 updateProgress 方法自动判断状态
                 val updatedInfo = endpointInfoFlow.value.updateProgress(downloadedBytes)
                 endpointInfoFlow.value = updatedInfo
-                Log.d(TAG, "更新下载进度: $normalizedPath, 状态: ${updatedInfo.status}, 已下载: $downloadedBytes/${updatedInfo.fileSize} bytes")
-                return newFixedLengthResponse(Status.OK, MIME_PLAINTEXT, "ok")
+                updateAllEndpointInfo()
+                Log.d(TAG, "更新下载进度: $endpoint, 状态: ${updatedInfo.status}, 已下载: $downloadedBytes/${updatedInfo.fileSize} bytes")
+                return okResponse()
             } else {
-                Log.w(TAG, "未找到endpoint的进度记录: $normalizedPath")
-                return newFixedLengthResponse(Status.NOT_FOUND, MIME_PLAINTEXT, "endpoint不存在")
+                Log.w(TAG, "未找到endpoint的进度记录: $endpoint")
+                return notFoundResponse()
             }
         } catch (e: Exception) {
             Log.e(TAG, "处理进度上报失败", e)
-            return newFixedLengthResponse(
-                Status.INTERNAL_ERROR,
-                MIME_PLAINTEXT,
-                "处理失败: ${e.message}",
-            )
+            return internalErrorResponse()
         }
     }
-
-    /**
-     * 规范化路径，确保以 / 开头
-     */
-    private fun normalizePath(path: String): String = if (path.startsWith("/")) path else "/$path"
 
     override fun start() {
         try {

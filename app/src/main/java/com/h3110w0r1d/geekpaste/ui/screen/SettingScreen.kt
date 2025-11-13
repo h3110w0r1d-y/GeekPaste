@@ -50,8 +50,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.net.toUri
 import com.h3110w0r1d.geekpaste.BuildConfig
 import com.h3110w0r1d.geekpaste.R
-import com.h3110w0r1d.geekpaste.data.config.LocalGlobalAppConfig
-import com.h3110w0r1d.geekpaste.model.LocalGlobalViewModel
+import com.h3110w0r1d.geekpaste.data.config.ConfigManager.Companion.LocalGlobalAppConfig
+import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.ui.components.LargeFlexibleTopAppBar
 import com.h3110w0r1d.geekpaste.ui.theme.getPrimaryColorMap
 import kotlin.collections.toList
@@ -61,7 +61,7 @@ import kotlin.to
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingScreen() {
-    val viewModel = LocalGlobalViewModel.current
+    val viewModel = LocalGlobalAppViewModel.current
     val appConfig = LocalGlobalAppConfig.current
     val context = LocalContext.current
 

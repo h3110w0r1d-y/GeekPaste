@@ -2,6 +2,7 @@ package com.h3110w0r1d.geekpaste.ui.screen
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DividerDefaults
@@ -29,17 +31,20 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.model.DownloadStatus
-import com.h3110w0r1d.geekpaste.model.FileDownloadProgress
-import com.h3110w0r1d.geekpaste.model.LocalGlobalViewModel
 import com.h3110w0r1d.geekpaste.model.ShareContent
 import java.text.DecimalFormat
 
@@ -51,15 +56,67 @@ fun ShareScreen(
     onShareToDevice: (BluetoothDevice, ShareContent) -> Unit,
     onFinish: () -> Unit,
 ) {
-    val appViewModel = LocalGlobalViewModel.current
+    val appViewModel = LocalGlobalAppViewModel.current
     val connectedDevices by appViewModel.connectedDevices.collectAsState()
+    val allEndpointInfo by appViewModel.allEndpointInfo.collectAsState()
+
+    // 控制是否显示退出确认对话框
+    var showExitDialog by remember { mutableStateOf(false) }
+
+    // 检查是否有文件正在传输
+    val hasFileTransferring =
+        fileToEndpointMap.values.any { endpoint ->
+            allEndpointInfo[endpoint]?.status == DownloadStatus.DOWNLOADING
+        }
+
+    // 处理返回逻辑
+    fun handleBack() {
+        if (hasFileTransferring) {
+            showExitDialog = true
+        } else {
+            onFinish()
+        }
+    }
+
+    // 拦截系统返回键
+    BackHandler(hasFileTransferring) {
+        handleBack()
+    }
+
+    // 退出确认对话框
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("确认退出") },
+            text = { Text("有文件正在传输，确定要退出吗？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitDialog = false
+                        onFinish()
+                    },
+                ) {
+                    Text("退出")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showExitDialog = false },
+                ) {
+                    Text("取消")
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("分享内容") },
                 navigationIcon = {
-                    IconButton(onClick = onFinish) {
+                    IconButton(onClick = {
+                        handleBack()
+                    }) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
@@ -108,10 +165,10 @@ fun ShareScreen(
                     )
                     shareContent.files.forEach { fileInfo ->
                         val endpoint = fileToEndpointMap[fileInfo]
+                        val endpointInfo = endpoint?.let { allEndpointInfo[it] }
                         FileItemCard(
                             fileInfo = fileInfo,
-                            endpoint = endpoint,
-                            appViewModel = appViewModel,
+                            endpointInfo = endpointInfo,
                         )
                     }
                 }
@@ -155,7 +212,6 @@ fun ShareScreen(
                         shareContent = shareContent,
                         onShareClick = { content ->
                             onShareToDevice(device, content)
-//                            onFinish()
                         },
                     )
                 }
@@ -167,21 +223,8 @@ fun ShareScreen(
 @Composable
 fun FileItemCard(
     fileInfo: ShareContent.FileInfo,
-    endpoint: String?,
-    appViewModel: com.h3110w0r1d.geekpaste.model.AppViewModel,
+    endpointInfo: com.h3110w0r1d.geekpaste.utils.EndpointInfo?,
 ) {
-    // 获取下载进度StateFlow并收集状态
-    val downloadProgress: FileDownloadProgress? =
-        endpoint?.let { ep ->
-            val progressFlow = appViewModel.getDownloadProgress(ep)
-            if (progressFlow != null) {
-                val progressState by progressFlow.collectAsState()
-                progressState
-            } else {
-                null
-            }
-        }
-
     Card(
         modifier =
             Modifier
@@ -220,9 +263,9 @@ fun FileItemCard(
             }
 
             // 显示下载进度
-            if (downloadProgress != null && endpoint != null) {
+            if (endpointInfo != null) {
                 Spacer(modifier = Modifier.height(12.dp))
-                when (downloadProgress.status) {
+                when (endpointInfo.status) {
                     DownloadStatus.NOT_STARTED -> {
                         Text(
                             text = "等待下载...",
@@ -233,7 +276,7 @@ fun FileItemCard(
                     DownloadStatus.DOWNLOADING -> {
                         val progress =
                             if (fileInfo.size > 0) {
-                                (downloadProgress.downloadedBytes.toFloat() / fileInfo.size).coerceIn(0f, 1f)
+                                (endpointInfo.downloadedBytes.toFloat() / fileInfo.size).coerceIn(0f, 1f)
                             } else {
                                 0f
                             }
@@ -245,7 +288,7 @@ fun FileItemCard(
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "${formatFileSize(
-                                    downloadProgress.downloadedBytes,
+                                    endpointInfo.downloadedBytes,
                                 )} / ${formatFileSize(fileInfo.size)} (${(progress * 100).toInt()}%)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

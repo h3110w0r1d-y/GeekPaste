@@ -1,8 +1,6 @@
-package com.h3110w0r1d.geekpaste
+package com.h3110w0r1d.geekpaste.activity
 
 import android.annotation.SuppressLint
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -12,30 +10,33 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import com.h3110w0r1d.geekpaste.data.config.LocalGlobalAppConfig
+import com.h3110w0r1d.geekpaste.data.config.ConfigManager.Companion.LocalGlobalAppConfig
 import com.h3110w0r1d.geekpaste.model.AppViewModel
-import com.h3110w0r1d.geekpaste.model.LocalGlobalViewModel
+import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.ui.AppNavigation
 import com.h3110w0r1d.geekpaste.ui.theme.AppTheme
 import dagger.hilt.android.AndroidEntryPoint
-
-val LocalGlobalScanCallback =
-    staticCompositionLocalOf<ActivityResultLauncher<IntentSenderRequest>> {
-        error("ActivityResultLauncher not provided!")
-    }
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    private val appViewModel: AppViewModel by viewModels()
+    @Inject
+    lateinit var appViewModel: AppViewModel
+
+    companion object {
+        val LocalGlobalScanCallback =
+            staticCompositionLocalOf<ActivityResultLauncher<IntentSenderRequest>> {
+                error("ActivityResultLauncher not provided!")
+            }
+    }
+
     private val requestPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions(),
@@ -85,7 +86,7 @@ class MainActivity : ComponentActivity() {
                 customColorScheme = appConfig.themeColor,
             ) {
                 CompositionLocalProvider(
-                    LocalGlobalViewModel provides appViewModel,
+                    LocalGlobalAppViewModel provides appViewModel,
                     LocalGlobalAppConfig provides appConfig,
                     LocalGlobalScanCallback provides scanCallback,
                 ) {

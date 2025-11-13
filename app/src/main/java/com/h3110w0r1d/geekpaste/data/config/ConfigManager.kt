@@ -32,6 +32,13 @@ private object ConfigKeys {
 class ConfigManager(
     private val dataStore: DataStore<Preferences>,
 ) {
+    companion object {
+        val LocalGlobalAppConfig =
+            staticCompositionLocalOf<AppConfig> {
+                error("AppConfig not provided!")
+            }
+    }
+
     val appConfig: StateFlow<AppConfig> =
         dataStore.data
             .map { preferences ->
@@ -109,8 +116,3 @@ class ConfigManager(
         }
     }
 }
-
-val LocalGlobalAppConfig =
-    staticCompositionLocalOf<AppConfig> {
-        error("AppConfig not provided!")
-    }
