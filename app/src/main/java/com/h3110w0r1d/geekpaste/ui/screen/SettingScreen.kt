@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,9 +91,15 @@ fun SettingScreen() {
                 val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 try {
                     context.contentResolver.takePersistableUriPermission(it, takeFlags)
+                    var uriString = it.toString()
+                    Log.i("SettingScreen", "uriString: $uriString")
+                    val docIndex = uriString.indexOf("/document")
+                    if (docIndex != -1) {
+                        uriString = uriString.take(docIndex)
+                    }
                     viewModel.updateAppConfig(
                         appConfig.copy(
-                            downloadPath = it.toString(),
+                            downloadPath = uriString,
                         ),
                     )
                 } catch (_: Exception) {
@@ -151,7 +158,7 @@ fun SettingScreen() {
                 imageVector = Icons.Outlined.Download,
                 title = stringResource(R.string.download_path),
                 trailingContent = {
-                    if (appConfig.downloadPath == "") {
+                    if (appConfig.downloadPath != "") {
                         IconButton(
                             onClick = {
                                 viewModel.updateAppConfig(
@@ -172,7 +179,16 @@ fun SettingScreen() {
                     if (appConfig.downloadPath.isEmpty()) {
                         stringResource(R.string.download_path_default)
                     } else {
-                        getReadablePathFromTreeUri(Uri.parse(appConfig.downloadPath))
+                        try {
+                            getReadablePathFromTreeUri(appConfig.downloadPath.toUri())
+                        } catch (e: Exception) {
+                            viewModel.updateAppConfig(
+                                appConfig.copy(
+                                    downloadPath = "",
+                                ),
+                            )
+                            stringResource(R.string.download_path_default)
+                        }
                     },
                 onClick = {
                     directoryPickerLauncher.launch(null)
@@ -416,6 +432,7 @@ fun SettingItem(
 
 fun getReadablePathFromTreeUri(uri: Uri): String {
     val docId = DocumentsContract.getTreeDocumentId(uri)
+    Log.i("getReadablePathFromTreeUri", "docId: $docId")
     val parts = docId.split(":")
 
     if (parts.size == 1) {

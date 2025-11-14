@@ -24,6 +24,7 @@ import com.h3110w0r1d.geekpaste.data.config.AppConfig
 import com.h3110w0r1d.geekpaste.data.config.ConfigManager
 import com.h3110w0r1d.geekpaste.utils.BleManager
 import com.h3110w0r1d.geekpaste.utils.CertManager
+import com.h3110w0r1d.geekpaste.utils.DownloadManager
 import com.h3110w0r1d.geekpaste.utils.FileInfoData
 import com.h3110w0r1d.geekpaste.utils.IpUtils
 import com.h3110w0r1d.geekpaste.utils.WebServer
@@ -45,6 +46,7 @@ class AppViewModel(
     private val webServer: WebServer,
     private val configManager: ConfigManager,
     private val certManager: CertManager,
+    private val downloadManager: DownloadManager,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val appConfig: StateFlow<AppConfig> = configManager.appConfig
@@ -316,7 +318,7 @@ class AppViewModel(
                 val pubKey =
                     certManager.getPublicKeyBase64()
                         ?: throw Exception("无法获取WebServer公钥")
-                Log.i("Share", "获取到公钥（Base64，长度: ${pubKey.length}）")
+                Log.i("Share", "获取到公钥（$pubKey，长度: ${pubKey.length}）")
 
                 // 5. 通过BLE发送文件信息
                 bleManager.sendFilesToDevice(

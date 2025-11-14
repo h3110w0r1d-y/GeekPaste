@@ -74,7 +74,50 @@ class BleManager(
     private val context: Context,
     private val configManager: ConfigManager,
     private val certManager: CertManager,
+    private val downloadManager: DownloadManager,
 ) {
+    /**
+     * 获取下载任务的StateFlow，用于监听下载状态
+     */
+    val downloadTasks = downloadManager.downloadTasks
+
+    /**
+     * 取消指定的下载任务
+     */
+    fun cancelDownloadTask(taskId: String) {
+        downloadManager.cancelTask(taskId)
+    }
+
+    /**
+     * 重试失败的下载任务（OkHttp版本支持断点续传）
+     */
+    suspend fun retryDownloadTask(
+        taskId: String,
+        filesShareData: FilesShareData,
+    ) {
+        val serverPublicKey = parsePublicKeyFromBase64(filesShareData.pubKey)
+        downloadManager.retryTask(taskId, serverPublicKey)
+    }
+
+    /**
+     * 获取下载进度百分比
+     */
+    fun getDownloadProgress(taskId: String): Float = downloadManager.getProgress(taskId)
+
+    /**
+     * 清除已完成的下载任务
+     */
+    fun clearCompletedDownloads() {
+        downloadManager.clearCompletedTasks()
+    }
+
+    /**
+     * 清除所有下载任务
+     */
+    fun clearAllDownloads() {
+        downloadManager.clearAllTasks()
+    }
+
     companion object {
         // UUID 常量
         private val SERVICE_UUID = UUID.fromString("91106bcd-4f0f-4519-8a99-b09fff8c13ba")
@@ -253,6 +296,38 @@ class BleManager(
         getService(SERVICE_UUID)?.getCharacteristic(DATA_CHARACTERISTIC_UUID)
 
     /**
+     * 从Base64编码的公钥解析公钥对象
+     */
+    private fun parsePublicKeyFromBase64(base64PubKey: String): java.security.PublicKey {
+        try {
+            // 移除可能存在的空格、换行符等，并处理JSON转义字符
+            val cleanedKey =
+                base64PubKey
+                    .trim()
+                    .replace("\\s+".toRegex(), "")
+                    .replace("\\/", "/") // 处理JSON转义的斜杠
+
+            Log.d(LOG_TAG, "原始公钥长度: ${base64PubKey.length}")
+            Log.d(LOG_TAG, "清理后公钥长度: ${cleanedKey.length}")
+            Log.d(LOG_TAG, "公钥前20字符: ${cleanedKey.take(20)}")
+            Log.d(LOG_TAG, "公钥后20字符: ${cleanedKey.takeLast(20)}")
+
+            // 解码Base64（使用NO_WRAP标志，避免自动添加换行符）
+            val keyBytes = android.util.Base64.decode(cleanedKey, android.util.Base64.NO_WRAP)
+            Log.d(LOG_TAG, "解码后字节数组长度: ${keyBytes.size}")
+            Log.d(LOG_TAG, "字节数组前8字节: ${keyBytes.take(8).joinToString(" ") { "%02X".format(it) }}")
+
+            // 尝试使用 X.509 格式解析公钥
+            val keySpec = java.security.spec.X509EncodedKeySpec(keyBytes)
+            val keyFactory = java.security.KeyFactory.getInstance("RSA")
+            return keyFactory.generatePublic(keySpec)
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "解析公钥失败: ${e.message}", e)
+            throw e
+        }
+    }
+
+    /**
      * 处理接收到的完整数据
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -286,6 +361,27 @@ class BleManager(
                             }
                         } catch (e: Exception) {
                             Log.e(LOG_TAG, "生成或发送证书失败: ${e.message}", e)
+                        }
+                    }
+                }
+                "files" -> {
+                    Log.i(LOG_TAG, "收到 files 类型数据，开始处理文件下载")
+                    coroutineScope.launch {
+                        try {
+                            val filesShareData = decodeFromString<FilesShareData>(bleData.data)
+                            Log.i(
+                                LOG_TAG,
+                                "收到 ${filesShareData.files.size} 个文件，端口: ${filesShareData.port}",
+                            )
+
+                            // 解析服务器公钥（从Base64）
+                            val serverPublicKey = parsePublicKeyFromBase64(filesShareData.pubKey)
+
+                            // 添加下载任务
+                            downloadManager.addDownloadTasks(filesShareData, serverPublicKey)
+                            Log.i(LOG_TAG, "文件下载任务已添加")
+                        } catch (e: Exception) {
+                            Log.e(LOG_TAG, "处理文件下载失败: ${e.message}", e)
                         }
                     }
                 }

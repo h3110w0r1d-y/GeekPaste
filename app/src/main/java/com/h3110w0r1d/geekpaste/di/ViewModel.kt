@@ -5,6 +5,7 @@ import com.h3110w0r1d.geekpaste.data.config.ConfigManager
 import com.h3110w0r1d.geekpaste.model.AppViewModel
 import com.h3110w0r1d.geekpaste.utils.BleManager
 import com.h3110w0r1d.geekpaste.utils.CertManager
+import com.h3110w0r1d.geekpaste.utils.DownloadManager
 import com.h3110w0r1d.geekpaste.utils.WebServer
 import dagger.Module
 import dagger.Provides
@@ -24,5 +25,14 @@ object ViewModel {
         webServer: WebServer,
         configManager: ConfigManager,
         certManager: CertManager,
-    ): AppViewModel = AppViewModel(context, bleManager, webServer, configManager, certManager)
+        downloadManager: DownloadManager,
+    ): AppViewModel =
+        AppViewModel(
+            context,
+            bleManager,
+            webServer,
+            configManager,
+            certManager,
+            downloadManager,
+        )
 }
