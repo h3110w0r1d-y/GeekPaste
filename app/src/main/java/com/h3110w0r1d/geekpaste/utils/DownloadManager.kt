@@ -24,9 +24,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import okhttp3.Call
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -60,6 +63,7 @@ data class DownloadTask(
     var downloadedBytes: Long = 0,
     var error: String? = null,
     var savedPath: String? = null,
+    val serverBaseUrl: String? = null, // 服务器基础 URL (用于回报进度)
 )
 
 /**
@@ -100,6 +104,13 @@ class DownloadManager(
     private val lastNotificationUpdateTime = mutableMapOf<String, Long>()
     private val notificationUpdateInterval = 500L // 500ms 更新一次通知
 
+    // 用于限流进度回报（记录上次回报时间）
+    private val lastProgressReportTime = mutableMapOf<String, Long>()
+    private val progressReportInterval = 500L // 0.5秒回报一次进度
+
+    // JSON 序列化器
+    private val json = Json { ignoreUnknownKeys = true }
+
     init {
         createNotificationChannel()
     }
@@ -118,7 +129,8 @@ class DownloadManager(
         filesShareData.files.forEach { fileInfo ->
             // 选择第一个可用的IP地址
             val ip = filesShareData.ips.firstOrNull() ?: return@forEach
-            val url = "https://$ip:${filesShareData.port}${fileInfo.endpoint}"
+            val url = "https://$ip:${filesShareData.port}/share/${fileInfo.endpoint}"
+            val serverBaseUrl = "https://$ip:${filesShareData.port}"
 
             // 跳过已存在的任务
             if (_downloadTasks.value.containsKey(fileInfo.endpoint)) {
@@ -131,6 +143,7 @@ class DownloadManager(
                     fileName = fileInfo.fileName,
                     fileSize = fileInfo.fileSize,
                     url = url,
+                    serverBaseUrl = serverBaseUrl,
                 )
             tasks[task.id] = task
         }
@@ -184,7 +197,7 @@ class DownloadManager(
             // 检查临时文件是否存在（支持断点续传）
             val tempFile = getTempFile(task.fileName)
             val downloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
-            updateTaskProgress(task.id, downloadedBytes)
+            updateTaskProgress(task.id, downloadedBytes, serverPublicKey)
 
             // 构建请求，添加 Range 头支持断点续传
             val requestBuilder =
@@ -228,14 +241,14 @@ class DownloadManager(
 
                         outputStream.write(buffer, 0, bytesRead)
                         currentBytes += bytesRead
-                        updateTaskProgress(task.id, currentBytes)
+                        updateTaskProgress(task.id, currentBytes, serverPublicKey)
                     }
                 }
             }
 
             // 下载完成，保存到最终位置
             val savedPath = saveToFinalLocation(task.fileName, tempFile)
-            updateTaskCompleted(task.id, savedPath)
+            updateTaskCompleted(task.id, savedPath, serverPublicKey)
             Log.i(LOG_TAG, "文件下载完成: ${task.fileName}, 保存路径: $savedPath")
 
             // 删除临时文件
@@ -642,6 +655,7 @@ class DownloadManager(
         notificationManager.cancel(notificationId)
         notificationIds.remove(taskId)
         lastNotificationUpdateTime.remove(taskId)
+        lastProgressReportTime.remove(taskId)
     }
 
     /**
@@ -654,6 +668,74 @@ class DownloadManager(
             bytes < 1024 * 1024 * 1024 -> "%.2f MB".format(bytes / (1024.0 * 1024.0))
             else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
         }
+
+    /**
+     * 异步回报下载进度到服务器
+     * 使用协程异步执行，不阻塞下载和通知更新
+     * @param force 是否强制回报，忽略限流（用于下载完成时）
+     */
+    private fun reportProgressToServer(
+        taskId: String,
+        downloadedBytes: Long,
+        serverBaseUrl: String,
+        serverPublicKey: PublicKey,
+        force: Boolean = false,
+    ) {
+        // 限流：避免过于频繁地发送请求（除非强制回报）
+        if (!force) {
+            val currentTime = System.currentTimeMillis()
+            val lastReportTime = lastProgressReportTime[taskId] ?: 0L
+
+            if (currentTime - lastReportTime < progressReportInterval) {
+                return // 跳过本次回报
+            }
+
+            // 更新上次回报时间
+            lastProgressReportTime[taskId] = currentTime
+        }
+
+        // 使用协程异步执行，不阻塞主流程
+        scope.launch {
+            try {
+                val progressUrl = "$serverBaseUrl/progress"
+
+                // 构造请求体
+                val request =
+                    ProgressReportRequest(
+                        endpoint = taskId,
+                        downloadedBytes = downloadedBytes,
+                    )
+                val jsonBody = json.encodeToString(request)
+                val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+
+                // 创建 OkHttpClient（复用已有的SSL配置）
+                val client = createOkHttpClient(serverPublicKey)
+
+                // 构造 HTTP 请求
+                val httpRequest =
+                    Request
+                        .Builder()
+                        .url(progressUrl)
+                        .post(requestBody)
+                        .build()
+
+                // 执行请求
+                val response = client.newCall(httpRequest).execute()
+
+                if (response.isSuccessful) {
+                    val forceTag = if (force) " (强制)" else ""
+                    Log.d(LOG_TAG, "成功回报进度$forceTag: $taskId, $downloadedBytes bytes")
+                } else {
+                    Log.w(LOG_TAG, "回报进度失败: HTTP ${response.code}")
+                }
+
+                response.close()
+            } catch (e: Exception) {
+                // 回报失败不影响下载，只记录日志
+                Log.w(LOG_TAG, "回报进度异常: ${e.message}")
+            }
+        }
+    }
 
     /**
      * 更新任务状态
@@ -674,6 +756,7 @@ class DownloadManager(
     private fun updateTaskProgress(
         taskId: String,
         downloadedBytes: Long,
+        serverPublicKey: PublicKey? = null,
     ) {
         _downloadTasks.value =
             _downloadTasks.value.toMutableMap().apply {
@@ -690,6 +773,11 @@ class DownloadManager(
             showProgressNotification(taskId, task.fileName, progress, downloadedBytes, task.fileSize)
             lastNotificationUpdateTime[taskId] = currentTime
         }
+
+        // 异步回报进度到服务器
+        if (task != null && task.serverBaseUrl != null && serverPublicKey != null) {
+            reportProgressToServer(taskId, downloadedBytes, task.serverBaseUrl, serverPublicKey)
+        }
     }
 
     /**
@@ -698,6 +786,7 @@ class DownloadManager(
     private fun updateTaskCompleted(
         taskId: String,
         savedPath: String,
+        serverPublicKey: PublicKey? = null,
     ) {
         _downloadTasks.value =
             _downloadTasks.value.toMutableMap().apply {
@@ -707,8 +796,20 @@ class DownloadManager(
                 }
             }
 
-        // 显示完成通知
         val task = _downloadTasks.value[taskId]
+
+        // 强制回报最终进度（忽略限流，确保服务器端显示100%完成）
+        if (task != null && task.serverBaseUrl != null && serverPublicKey != null) {
+            reportProgressToServer(
+                taskId = taskId,
+                downloadedBytes = task.fileSize, // 回报完整的文件大小
+                serverBaseUrl = task.serverBaseUrl,
+                serverPublicKey = serverPublicKey,
+                force = true, // 强制回报，忽略限流
+            )
+        }
+
+        // 显示完成通知
         if (task != null) {
             showCompletedNotification(taskId, task.fileName)
         }

@@ -96,7 +96,7 @@ sealed class FileSource {
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 @JsonIgnoreUnknownKeys
-private data class ProgressReportRequest(
+data class ProgressReportRequest(
     val endpoint: String,
     val downloadedBytes: Long = 0L,
 )
