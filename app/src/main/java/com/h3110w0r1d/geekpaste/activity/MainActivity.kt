@@ -1,6 +1,9 @@
 package com.h3110w0r1d.geekpaste.activity
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -17,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import com.h3110w0r1d.geekpaste.data.config.ConfigManager.Companion.LocalGlobalAppConfig
 import com.h3110w0r1d.geekpaste.model.AppViewModel
 import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
@@ -56,9 +60,30 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // 收集所有需要请求的权限
+        val permissionsToRequest = mutableListOf<String>()
+        
+        // 检查蓝牙权限
         if (!appViewModel.checkBlePermission()) {
-            requestPermissionLauncher.launch(appViewModel.missingPermissions())
+            permissionsToRequest.addAll(appViewModel.missingPermissions())
         }
+        
+        // 检查通知权限（Android 13+）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        
+        // 如果有需要请求的权限，则请求
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+        
         setContent {
             val appConfig by appViewModel.appConfig.collectAsState()
             // 只有在配置初始化完成后才显示主界面，防止配置未加载完成时闪现引导界面
