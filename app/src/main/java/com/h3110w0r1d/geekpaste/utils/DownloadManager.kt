@@ -491,18 +491,6 @@ class DownloadManager(
                     )
                 }
 
-            // 创建打开文件夹的 Intent 和 PendingIntent
-            val openFolderIntent = createOpenFolderIntent(uriString)
-            val openFolderPendingIntent =
-                openFolderIntent?.let {
-                    PendingIntent.getActivity(
-                        context,
-                        notificationId + 1000, // 使用不同的请求码
-                        it,
-                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-                    )
-                }
-
             // 创建操作按钮
             val builder =
                 NotificationCompat
@@ -524,15 +512,6 @@ class DownloadManager(
                     android.R.drawable.ic_menu_view,
                     context.getString(R.string.download_notification_action_open_file),
                     openFilePendingIntent,
-                )
-            }
-
-            // 添加"打开文件夹"按钮
-            if (openFolderPendingIntent != null) {
-                builder.addAction(
-                    android.R.drawable.ic_menu_directions,
-                    context.getString(R.string.download_notification_action_open_folder),
-                    openFolderPendingIntent,
                 )
             }
 
@@ -559,65 +538,6 @@ class DownloadManager(
         } catch (e: Exception) {
             Log.e(LOG_TAG, "创建打开文件 Intent 失败: ${e.message}")
             null
-        }
-
-    /**
-     * 创建打开文件夹的 Intent
-     */
-    private fun createOpenFolderIntent(uriString: String): Intent? =
-        try {
-            val uri = Uri.parse(uriString)
-
-            // 根据 URI 的 authority 判断类型
-            val folderUri =
-                when (uri.authority) {
-                    // MediaStore Downloads URI
-                    "media" -> {
-                        // 打开 Downloads 文件夹
-                        MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                    }
-                    // SAF Document URI
-                    "com.android.externalstorage.documents",
-                    "com.android.providers.downloads.documents",
-                    -> {
-                        try {
-                            // 尝试获取父目录 URI
-                            Log.i("DownloadManager", "尝试获取父目录 URI: $uri")
-
-                            var uriString = uriString
-                            Log.i("DownloadManager", "uriString: $uriString")
-                            val docIndex = uriString.indexOf("/document")
-                            if (docIndex != -1) {
-                                uriString = uriString.take(docIndex)
-                            }
-                            uriString.toUri()
-                        } catch (e: Exception) {
-                            Log.w(LOG_TAG, "无法解析父目录，使用文件 URI: ${e.message}")
-                            uri
-                        }
-                    }
-                    else -> {
-                        // 其他类型，尝试打开 Downloads 文件夹
-                        MediaStore.Downloads.EXTERNAL_CONTENT_URI
-                    }
-                }
-
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "创建打开文件夹 Intent 失败: ${e.message}", e)
-            // 降级方案：尝试打开文件管理器
-            try {
-                Intent(Intent.ACTION_VIEW).apply {
-                    type = DocumentsContract.Document.MIME_TYPE_DIR
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-            } catch (e2: Exception) {
-                Log.e(LOG_TAG, "降级方案也失败: ${e2.message}")
-                null
-            }
         }
 
     /**
