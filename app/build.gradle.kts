@@ -23,14 +23,14 @@ android {
         applicationId = "com.h3110w0r1d.geekpaste"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.0.3"
+        versionCode = 5
+        versionName = "0.0.4"
         buildConfigField("String", "REPO_URL", "\"https://github.com/h3110w0r1d-y/GeekPaste\"")
     }
 
     splits {
         abi {
-            isEnable = true
+            isEnable = false
             isUniversalApk = true
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")

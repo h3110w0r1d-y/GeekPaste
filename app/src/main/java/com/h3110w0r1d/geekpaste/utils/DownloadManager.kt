@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -116,6 +118,145 @@ class DownloadManager(
     }
 
     /**
+     * 创建用于 Ping 的 OkHttpClient（超时时间为 1 秒）
+     */
+    private fun createPingClient(expectedPublicKey: PublicKey): OkHttpClient {
+        // 创建自定义 TrustManager
+        val trustManager =
+            object : X509TrustManager {
+                override fun checkClientTrusted(
+                    chain: Array<out X509Certificate>?,
+                    authType: String?,
+                ) {
+                    // 不需要验证客户端
+                }
+
+                override fun checkServerTrusted(
+                    chain: Array<out X509Certificate>?,
+                    authType: String?,
+                ) {
+                    if (chain.isNullOrEmpty()) {
+                        throw java.security.cert.CertificateException("证书链为空")
+                    }
+
+                    val serverCert = chain[0]
+                    val serverPublicKey = serverCert.publicKey
+
+                    if (!serverPublicKey.encoded.contentEquals(expectedPublicKey.encoded)) {
+                        throw java.security.cert.CertificateException("服务器公钥不匹配")
+                    }
+                }
+
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+
+        val sslContext = SSLContext.getInstance("TLS")
+        sslContext.init(null, arrayOf(trustManager), null)
+
+        return OkHttpClient
+            .Builder()
+            .sslSocketFactory(sslContext.socketFactory, trustManager)
+            .hostnameVerifier { _, _ -> true } // 跳过主机名验证（因为使用IP地址）
+            .connectTimeout(1, TimeUnit.SECONDS) // 连接超时 1 秒
+            .readTimeout(1, TimeUnit.SECONDS) // 读取超时 1 秒
+            .writeTimeout(1, TimeUnit.SECONDS) // 写入超时 1 秒
+            .build()
+    }
+
+    /**
+     * Ping 单个服务器以测试响应时间
+     * @param ip IP地址
+     * @param port 端口号
+     * @param serverPublicKey 服务器公钥（用于SSL验证）
+     * @return 响应时间（毫秒），如果失败返回 Long.MAX_VALUE
+     */
+    private suspend fun pingServer(
+        ip: String,
+        port: Int,
+        serverPublicKey: PublicKey,
+    ): Long =
+        withContext(Dispatchers.IO) {
+            try {
+                val pingUrl = "https://$ip:$port/ping"
+                val client = createPingClient(serverPublicKey)
+
+                val startTime = System.currentTimeMillis()
+
+                val request =
+                    Request
+                        .Builder()
+                        .url(pingUrl)
+                        .get()
+                        .build()
+
+                val response = client.newCall(request).execute()
+                val responseTime = System.currentTimeMillis() - startTime
+
+                response.close()
+
+                if (response.isSuccessful) {
+                    Log.d(LOG_TAG, "Ping $ip:$port 成功，响应时间: ${responseTime}ms")
+                    responseTime
+                } else {
+                    Log.w(LOG_TAG, "Ping $ip:$port 失败: HTTP ${response.code}")
+                    Long.MAX_VALUE
+                }
+            } catch (e: Exception) {
+                Log.w(LOG_TAG, "Ping $ip:$port 异常: ${e.message}")
+                Long.MAX_VALUE
+            }
+        }
+
+    /**
+     * 选择响应最快的服务器
+     * @param ips IP地址列表
+     * @param port 端口号
+     * @param serverPublicKey 服务器公钥（用于SSL验证）
+     * @return 最快的IP地址，如果所有都失败返回第一个IP
+     */
+    private suspend fun selectFastestServer(
+        ips: List<String>,
+        port: Int,
+        serverPublicKey: PublicKey,
+    ): String =
+        withContext(Dispatchers.IO) {
+            if (ips.isEmpty()) {
+                throw IllegalArgumentException("IP地址列表为空")
+            }
+
+            if (ips.size == 1) {
+                Log.i(LOG_TAG, "只有一个IP地址，直接使用: ${ips[0]}")
+                return@withContext ips[0]
+            }
+
+            Log.i(LOG_TAG, "开始 ping 测试 ${ips.size} 个服务器...")
+
+            // 并发 ping 所有服务器
+            val pingResults =
+                ips
+                    .map { ip ->
+                        async {
+                            val responseTime = pingServer(ip, port, serverPublicKey)
+                            Pair(ip, responseTime)
+                        }
+                    }.awaitAll()
+
+            // 选择响应时间最短的服务器
+            val fastestServer = pingResults.minByOrNull { it.second }
+
+            if (fastestServer != null && fastestServer.second != Long.MAX_VALUE) {
+                Log.i(
+                    LOG_TAG,
+                    "选择最快的服务器: ${fastestServer.first}，响应时间: ${fastestServer.second}ms",
+                )
+                fastestServer.first
+            } else {
+                Log.w(LOG_TAG, "所有服务器 ping 失败，使用第一个IP: ${ips[0]}")
+                ips[0]
+            }
+        }
+
+    /**
      * 添加下载任务
      * @param filesShareData 文件分享数据
      * @param serverPublicKey 服务器公钥（用于SSL验证）
@@ -124,36 +265,43 @@ class DownloadManager(
         filesShareData: FilesShareData,
         serverPublicKey: PublicKey,
     ) {
-        val tasks = mutableMapOf<String, DownloadTask>()
+        scope.launch {
+            try {
+                // 先选择最快的服务器
+                val fastestIp = selectFastestServer(filesShareData.ips, filesShareData.port, serverPublicKey)
 
-        filesShareData.files.forEach { fileInfo ->
-            // 选择第一个可用的IP地址
-            val ip = filesShareData.ips.firstOrNull() ?: return@forEach
-            val url = "https://$ip:${filesShareData.port}/share/${fileInfo.endpoint}"
-            val serverBaseUrl = "https://$ip:${filesShareData.port}"
+                val tasks = mutableMapOf<String, DownloadTask>()
 
-            // 跳过已存在的任务
-            if (_downloadTasks.value.containsKey(fileInfo.endpoint)) {
-                return@forEach
+                filesShareData.files.forEach { fileInfo ->
+                    val url = "https://$fastestIp:${filesShareData.port}/share/${fileInfo.endpoint}"
+                    val serverBaseUrl = "https://$fastestIp:${filesShareData.port}"
+
+                    // 跳过已存在的任务
+                    if (_downloadTasks.value.containsKey(fileInfo.endpoint)) {
+                        return@forEach
+                    }
+
+                    val task =
+                        DownloadTask(
+                            id = fileInfo.endpoint,
+                            fileName = fileInfo.fileName,
+                            fileSize = fileInfo.fileSize,
+                            url = url,
+                            serverBaseUrl = serverBaseUrl,
+                        )
+                    tasks[task.id] = task
+                }
+
+                _downloadTasks.value += tasks
+                Log.i(LOG_TAG, "添加 ${tasks.size} 个下载任务，使用服务器: $fastestIp")
+
+                // 开始下载所有任务
+                tasks.values.forEach { task ->
+                    startDownload(task, serverPublicKey)
+                }
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "添加下载任务失败: ${e.message}", e)
             }
-
-            val task =
-                DownloadTask(
-                    id = fileInfo.endpoint,
-                    fileName = fileInfo.fileName,
-                    fileSize = fileInfo.fileSize,
-                    url = url,
-                    serverBaseUrl = serverBaseUrl,
-                )
-            tasks[task.id] = task
-        }
-
-        _downloadTasks.value += tasks
-        Log.i(LOG_TAG, "添加 ${tasks.size} 个下载任务")
-
-        // 开始下载所有任务
-        tasks.values.forEach { task ->
-            startDownload(task, serverPublicKey)
         }
     }
 
