@@ -1,12 +1,9 @@
 package com.h3110w0r1d.geekpaste.di
 
 import android.content.Context
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager
+import com.h3110w0r1d.geekpaste.data.ConfigManager
 import com.h3110w0r1d.geekpaste.model.AppViewModel
 import com.h3110w0r1d.geekpaste.utils.BleManager
-import com.h3110w0r1d.geekpaste.utils.CertManager
-import com.h3110w0r1d.geekpaste.utils.DownloadManager
-import com.h3110w0r1d.geekpaste.utils.WebServer
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,17 +19,11 @@ object ViewModel {
     fun provideViewModel(
         @ApplicationContext context: Context,
         bleManager: BleManager,
-        webServer: WebServer,
         configManager: ConfigManager,
-        certManager: CertManager,
-        downloadManager: DownloadManager,
     ): AppViewModel =
         AppViewModel(
             context,
             bleManager,
-            webServer,
             configManager,
-            certManager,
-            downloadManager,
         )
 }

@@ -8,11 +8,6 @@
     <string name="appearance">外观</string>
     <string name="module_activated">模块已激活</string>
     <string name="module_inactivated">模块未激活</string>
-    <string name="please_restart_system">请重启系统使模块生效</string>
-    <string name="lsposed_manager_not_install">LSPosed 管理器未安装</string>
-    <string name="app_list">应用列表</string>
-    <string name="enabled">已启用</string>
-    <string name="disabled">未启用</string>
     <string name="night_mode_follow_system">深色模式跟随系统</string>
     <string name="night_mode_enabled">深色模式</string>
     <string name="use_system_color">使用系统主题色</string>
@@ -38,20 +33,4 @@
     <string name="sakura_theme">樱花色</string>
     <string name="pure_black_dark_theme">纯黑主题</string>
     <string name="pure_black_dark_theme_summary">当深色主题启用时使用纯黑主题</string>
-    <string name="download">下载</string>
-    <string name="download_path">下载路径</string>
-    <string name="download_path_default">默认（Download 目录）</string>
-    <string name="download_path_custom">自定义目录</string>
-    <string name="select_download_directory">选择下载目录</string>
-    
-    <!-- 下载通知 -->
-    <string name="download_notification_channel_name">文件下载</string>
-    <string name="download_notification_channel_description">显示文件下载进度和状态</string>
-    <string name="download_notification_title">正在下载：%s</string>
-    <string name="download_notification_completed_title">下载完成</string>
-    <string name="download_notification_completed_text">%s 已下载完成</string>
-    <string name="download_notification_failed_title">下载失败</string>
-    <string name="download_notification_failed_text">%s 下载失败：%s</string>
-    <string name="download_notification_action_open_file">打开文件</string>
-    <string name="download_notification_action_open_folder">打开文件夹</string>
 </resources>

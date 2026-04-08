@@ -21,7 +21,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.ContextCompat
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager.Companion.LocalGlobalAppConfig
+import com.h3110w0r1d.geekpaste.data.ConfigManager.Companion.LocalGlobalAppConfig
 import com.h3110w0r1d.geekpaste.model.AppViewModel
 import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.ui.AppNavigation
@@ -62,28 +62,28 @@ class MainActivity : ComponentActivity() {
 
         // 收集所有需要请求的权限
         val permissionsToRequest = mutableListOf<String>()
-        
+
         // 检查蓝牙权限
         if (!appViewModel.checkBlePermission()) {
             permissionsToRequest.addAll(appViewModel.missingPermissions())
         }
-        
+
         // 检查通知权限（Android 13+）
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(
                     this,
-                    Manifest.permission.POST_NOTIFICATIONS
+                    Manifest.permission.POST_NOTIFICATIONS,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
-        
+
         // 如果有需要请求的权限，则请求
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
-        
+
         setContent {
             val appConfig by appViewModel.appConfig.collectAsState()
             // 只有在配置初始化完成后才显示主界面，防止配置未加载完成时闪现引导界面

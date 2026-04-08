@@ -214,7 +214,7 @@ class BleDataFragmentHandler {
 
         // 如果分片数量等于最大索引+1，说明分片连续，可以直接按索引顺序合并
         if (fragments.size == maxIndex + 1) {
-            for (i in 0..maxIndex) {
+            for (i in 0 downTo maxIndex) {
                 val fragment = fragments[i]!!
                 System.arraycopy(fragment, 0, mergedData, offset, fragment.size)
                 offset += fragment.size

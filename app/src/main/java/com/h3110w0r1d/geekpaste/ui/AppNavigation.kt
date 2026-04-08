@@ -8,8 +8,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
@@ -36,7 +34,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.h3110w0r1d.geekpaste.ui.screen.AppScreen
 import com.h3110w0r1d.geekpaste.ui.screen.HomeScreen
 import com.h3110w0r1d.geekpaste.ui.screen.SettingScreen
 
@@ -83,36 +80,17 @@ enum class Destination(
         Left2RightExitTransition
     },
 ) {
-    APP(
-        "app",
-        "App",
-        { Icons.AutoMirrored.Outlined.List },
-        { Icons.AutoMirrored.Filled.List },
-        { AppScreen() },
-        enterTransition = { fromRoute ->
-            Left2RightEnterTransition
-        },
-        exitTransition = { toRoute ->
-            Right2LeftExitTransition
-        },
-    ),
     HOME(
         "home",
         "Home",
         { Icons.Outlined.Home },
         { Icons.Default.Home },
         { HomeScreen() },
-        enterTransition = { fromRoute ->
-            when (fromRoute) {
-                SETTING.route -> Left2RightEnterTransition
-                else -> Right2LeftEnterTransition
-            }
+        enterTransition = { _ ->
+            Left2RightEnterTransition
         },
-        exitTransition = { toRoute ->
-            when (toRoute) {
-                APP.route -> Left2RightExitTransition
-                else -> Right2LeftExitTransition
-            }
+        exitTransition = { _ ->
+            Right2LeftExitTransition
         },
     ),
     SETTING(
@@ -121,10 +99,10 @@ enum class Destination(
         { Icons.Outlined.Settings },
         { Icons.Default.Settings },
         { SettingScreen() },
-        enterTransition = { fromRoute ->
+        enterTransition = { _ ->
             Right2LeftEnterTransition
         },
-        exitTransition = { toRoute ->
+        exitTransition = { _ ->
             Left2RightExitTransition
         },
     ),

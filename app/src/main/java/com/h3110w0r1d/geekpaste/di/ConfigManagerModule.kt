@@ -2,7 +2,7 @@ package com.h3110w0r1d.geekpaste.di
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager
+import com.h3110w0r1d.geekpaste.data.ConfigManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

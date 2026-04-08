@@ -81,7 +81,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.net.toUri
 import com.h3110w0r1d.geekpaste.R
 import com.h3110w0r1d.geekpaste.activity.MainActivity.Companion.LocalGlobalScanCallback
-import com.h3110w0r1d.geekpaste.data.config.DeviceInfo
+import com.h3110w0r1d.geekpaste.data.DeviceInfo
 import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.ui.components.LargeFlexibleTopAppBar
 import com.h3110w0r1d.geekpaste.utils.XposedUtil.getModuleVersion
@@ -351,8 +351,12 @@ fun DeviceCard(
     // Badge颜色：绿色=已连接，黄色=连接中，红色=已断开
     val badgeColor =
         when (connectionState) {
-            DeviceConnectionState.CONNECTED -> Color(0xFF4CAF50) // 绿色
-            DeviceConnectionState.CONNECTING -> Color(0xFFFFC107) // 黄色
+            DeviceConnectionState.CONNECTED -> Color(0xFF4CAF50)
+
+            // 绿色
+            DeviceConnectionState.CONNECTING -> Color(0xFFFFC107)
+
+            // 黄色
             DeviceConnectionState.DISCONNECTED -> Color(0xFFF44336) // 红色
         }
 
@@ -476,6 +480,7 @@ fun DeviceCard(
                                 },
                             )
                         }
+
                         DeviceConnectionState.CONNECTING,
                         DeviceConnectionState.CONNECTED,
                         -> {

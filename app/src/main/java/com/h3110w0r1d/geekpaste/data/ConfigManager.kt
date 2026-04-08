@@ -1,4 +1,4 @@
-package com.h3110w0r1d.geekpaste.data.config
+package com.h3110w0r1d.geekpaste.data
 
 import android.util.Log
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -27,9 +27,6 @@ private object ConfigKeys {
     val nightModeEnabled = booleanPreferencesKey("night_mode_enabled")
     val pureBlackDarkTheme = booleanPreferencesKey("pure_black_dark_theme")
     val savedDevices = stringPreferencesKey("saved_devices")
-
-    // 下载路径
-    val downloadPath = stringPreferencesKey("download_path")
 }
 
 class ConfigManager(
@@ -56,7 +53,6 @@ class ConfigManager(
                         Json.decodeFromString<List<DeviceInfo>>(
                             preferences[ConfigKeys.savedDevices] ?: "[]",
                         ),
-                    downloadPath = preferences[ConfigKeys.downloadPath] ?: "",
                     isConfigInitialized = true,
                 )
             }.stateIn(
@@ -66,13 +62,10 @@ class ConfigManager(
             )
 
     suspend fun addDevice(address: String) {
-        println("addDevice2: $address")
         val device = appConfig.value.savedDevices.firstOrNull { it.address == address }
-        println("addDevice3: $device")
         if (device != null) {
             return
         }
-        println("addDevice3: $address")
         val newDevicesConfig =
             appConfig.value.savedDevices.toMutableList().apply {
                 add(DeviceInfo(address = address, name = address))
@@ -117,7 +110,6 @@ class ConfigManager(
             preferences[ConfigKeys.nightModeFollowSystem] = appConfig.nightModeFollowSystem
             preferences[ConfigKeys.nightModeEnabled] = appConfig.nightModeEnabled
             preferences[ConfigKeys.pureBlackDarkTheme] = appConfig.pureBlackDarkTheme
-            preferences[ConfigKeys.downloadPath] = appConfig.downloadPath
         }
     }
 }

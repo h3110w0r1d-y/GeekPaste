@@ -1,4 +1,4 @@
-package com.h3110w0r1d.geekpaste.data.config
+package com.h3110w0r1d.geekpaste.data
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -15,8 +15,6 @@ data class AppConfig(
     val pureBlackDarkTheme: Boolean = false,
     val isConfigInitialized: Boolean = false,
     val savedDevices: List<DeviceInfo> = listOf(),
-    // 下载路径相关配置
-    val downloadPath: String = "", // 空字符串表示使用默认Download目录
 )
 
 @OptIn(ExperimentalSerializationApi::class)

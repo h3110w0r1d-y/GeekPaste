@@ -2,12 +2,7 @@ package com.h3110w0r1d.geekpaste.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.net.Uri
-import android.provider.DocumentsContract
-import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
@@ -20,18 +15,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.InvertColors
 import androidx.compose.material.icons.outlined.Merge
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.Scaffold
@@ -58,7 +50,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.net.toUri
 import com.h3110w0r1d.geekpaste.BuildConfig
 import com.h3110w0r1d.geekpaste.R
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager.Companion.LocalGlobalAppConfig
+import com.h3110w0r1d.geekpaste.data.ConfigManager.Companion.LocalGlobalAppConfig
 import com.h3110w0r1d.geekpaste.model.AppViewModel.Companion.LocalGlobalAppViewModel
 import com.h3110w0r1d.geekpaste.ui.components.LargeFlexibleTopAppBar
 import com.h3110w0r1d.geekpaste.ui.theme.getPrimaryColorMap
@@ -80,32 +72,6 @@ fun SettingScreen() {
             appConfig.nightModeEnabled
         }
     var selectColorDialogOpened by remember { mutableStateOf(false) }
-
-    // SAF 目录选择器
-    val directoryPickerLauncher =
-        rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocumentTree(),
-        ) { uri ->
-            uri?.let {
-                // 持久化URI权限
-                val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                try {
-                    context.contentResolver.takePersistableUriPermission(it, takeFlags)
-                    var uriString = it.toString()
-                    Log.i("SettingScreen", "uriString: $uriString")
-                    val docIndex = uriString.indexOf("/document")
-                    if (docIndex != -1) {
-                        uriString = uriString.take(docIndex)
-                    }
-                    viewModel.updateAppConfig(
-                        appConfig.copy(
-                            downloadPath = uriString,
-                        ),
-                    )
-                } catch (_: Exception) {
-                }
-            }
-        }
 
     val themeColorNamesMap =
         hashMapOf(
@@ -152,49 +118,6 @@ fun SettingScreen() {
                     .padding(innerPadding)
                     .verticalScroll(scrollState),
         ) {
-            SettingItemGroup(stringResource(R.string.download))
-
-            SettingItem(
-                imageVector = Icons.Outlined.Download,
-                title = stringResource(R.string.download_path),
-                trailingContent = {
-                    if (appConfig.downloadPath != "") {
-                        IconButton(
-                            onClick = {
-                                viewModel.updateAppConfig(
-                                    appConfig.copy(
-                                        downloadPath = "",
-                                    ),
-                                )
-                            },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.SettingsBackupRestore,
-                                contentDescription = null,
-                            )
-                        }
-                    }
-                },
-                description =
-                    if (appConfig.downloadPath.isEmpty()) {
-                        stringResource(R.string.download_path_default)
-                    } else {
-                        try {
-                            getReadablePathFromTreeUri(appConfig.downloadPath.toUri())
-                        } catch (e: Exception) {
-                            viewModel.updateAppConfig(
-                                appConfig.copy(
-                                    downloadPath = "",
-                                ),
-                            )
-                            stringResource(R.string.download_path_default)
-                        }
-                    },
-                onClick = {
-                    directoryPickerLauncher.launch(null)
-                },
-            )
-
             SettingItemGroup(stringResource(R.string.appearance))
 
             SettingItem(
@@ -255,7 +178,7 @@ fun SettingScreen() {
                 SettingItem(
                     imageVector = ImageVector.vectorResource(R.drawable.colors_24px),
                     title = stringResource(R.string.theme_color),
-                    description = themeColorNamesMap.get(appConfig.themeColor),
+                    description = themeColorNamesMap[appConfig.themeColor],
                     onClick = {
                         selectColorDialogOpened = true
                     },
@@ -369,7 +292,7 @@ fun SettingScreen() {
                                 )
                             },
                             headlineContent = {
-                                Text(text = themeColorNamesMap.get(it) ?: "")
+                                Text(text = themeColorNamesMap[it] ?: "")
                             },
                             modifier =
                                 Modifier.clickable(
@@ -417,7 +340,7 @@ fun SettingItem(
             Icon(
                 imageVector = imageVector,
                 contentDescription = null,
-                modifier = if (description != null)Modifier.height(42.dp) else Modifier,
+                modifier = if (description != null) Modifier.height(42.dp) else Modifier,
             )
         },
         headlineContent = { Text(title) },
@@ -428,29 +351,4 @@ fun SettingItem(
                 onClick = onClick,
             ),
     )
-}
-
-fun getReadablePathFromTreeUri(uri: Uri): String {
-    val docId = DocumentsContract.getTreeDocumentId(uri)
-    Log.i("getReadablePathFromTreeUri", "docId: $docId")
-    val parts = docId.split(":")
-
-    if (parts.size == 1) {
-        // 例如 primary
-        if (parts[0] == "primary") {
-            return "内部存储"
-        }
-        return "外部存储($docId)"
-    }
-
-    val volume = parts[0] // primary or 1234-5678(SD卡)
-    val relativePath = parts[1] // Download / Documents ...
-
-    val storageName =
-        when (volume.lowercase()) {
-            "primary" -> "内部存储"
-            else -> "外部存储($volume)"
-        }
-
-    return "$storageName/$relativePath"
 }

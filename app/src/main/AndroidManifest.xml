@@ -7,13 +7,6 @@
     <!-- BLE权限 -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    
-    <!-- 网络权限 -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    
-    <!-- 通知权限 (Android 13+) -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
     <uses-feature android:name="android.software.companion_device_setup"/>
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true"/>
 
@@ -36,34 +29,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".activity.ShareActivity"
-            android:exported="true"
-            android:theme="@style/Theme.GeekPaste"
-            android:launchMode="standard">
-            <!-- 分享文本内容 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            
-            <!-- 分享单个文件 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            
-            <!-- 分享多个文件 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND_MULTIPLE" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-        </activity>
-
         <meta-data
             android:name="xposedmodule"
             android:value="true" />

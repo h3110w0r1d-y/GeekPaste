@@ -6,9 +6,8 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt.android)
 }
@@ -23,8 +22,8 @@ android {
         applicationId = "com.h3110w0r1d.geekpaste"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.0.4"
+        versionCode = 6
+        versionName = "0.0.5"
         buildConfigField("String", "REPO_URL", "\"https://github.com/h3110w0r1d-y/GeekPaste\"")
     }
 
@@ -81,11 +80,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_21)
-        }
-    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -94,6 +88,12 @@ android {
         compilerOptions {
             freeCompilerArgs.add("-Xannotation-default-target=param-property")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
     }
 }
 
@@ -111,13 +111,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    implementation(libs.bouncycastle.provider)
-    implementation(libs.bouncycastle.pkix)
     implementation(libs.hilt.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.androidx.documentfile)
-    implementation(libs.okhttp)
 
-    kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
     compileOnly(files("libs/api-82.jar"))
 }

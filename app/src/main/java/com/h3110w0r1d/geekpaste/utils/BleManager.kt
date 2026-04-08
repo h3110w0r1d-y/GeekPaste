@@ -28,7 +28,7 @@ import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.annotation.RequiresPermission
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager
+import com.h3110w0r1d.geekpaste.data.ConfigManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -53,71 +53,10 @@ data class BleData(
     val data: String,
 )
 
-// 文件信息数据模型（用于files类型）
-@Serializable
-data class FileInfoData(
-    val endpoint: String,
-    val fileName: String,
-    val fileSize: Long,
-)
-
-// 文件分享数据模型（用于files类型的data字段）
-@Serializable
-data class FilesShareData(
-    val ips: List<String>,
-    val port: Int,
-    val pubKey: String,
-    val files: List<FileInfoData>,
-)
-
 class BleManager(
     private val context: Context,
     private val configManager: ConfigManager,
-    private val certManager: CertManager,
-    private val downloadManager: DownloadManager,
 ) {
-    /**
-     * 获取下载任务的StateFlow，用于监听下载状态
-     */
-    val downloadTasks = downloadManager.downloadTasks
-
-    /**
-     * 取消指定的下载任务
-     */
-    fun cancelDownloadTask(taskId: String) {
-        downloadManager.cancelTask(taskId)
-    }
-
-    /**
-     * 重试失败的下载任务（OkHttp版本支持断点续传）
-     */
-    suspend fun retryDownloadTask(
-        taskId: String,
-        filesShareData: FilesShareData,
-    ) {
-        val serverPublicKey = parsePublicKeyFromBase64(filesShareData.pubKey)
-        downloadManager.retryTask(taskId, serverPublicKey)
-    }
-
-    /**
-     * 获取下载进度百分比
-     */
-    fun getDownloadProgress(taskId: String): Float = downloadManager.getProgress(taskId)
-
-    /**
-     * 清除已完成的下载任务
-     */
-    fun clearCompletedDownloads() {
-        downloadManager.clearCompletedTasks()
-    }
-
-    /**
-     * 清除所有下载任务
-     */
-    fun clearAllDownloads() {
-        downloadManager.clearAllTasks()
-    }
-
     companion object {
         // UUID 常量
         private val SERVICE_UUID = UUID.fromString("91106bcd-4f0f-4519-8a99-b09fff8c13ba")
@@ -214,8 +153,12 @@ class BleManager(
                 BluetoothDevice.BOND_NONE,
             )
         when (bondState) {
-            BluetoothDevice.BOND_BONDED -> gatt.discoverServices()
+            BluetoothDevice.BOND_BONDED -> {
+                gatt.discoverServices()
+            }
+
             BluetoothDevice.BOND_NONE -> {}
+
             BluetoothDevice.BOND_BONDING -> {}
         }
     }
@@ -296,45 +239,10 @@ class BleManager(
         getService(SERVICE_UUID)?.getCharacteristic(DATA_CHARACTERISTIC_UUID)
 
     /**
-     * 从Base64编码的公钥解析公钥对象
-     */
-    private fun parsePublicKeyFromBase64(base64PubKey: String): java.security.PublicKey {
-        try {
-            // 移除可能存在的空格、换行符等，并处理JSON转义字符
-            val cleanedKey =
-                base64PubKey
-                    .trim()
-                    .replace("\\s+".toRegex(), "")
-                    .replace("\\/", "/") // 处理JSON转义的斜杠
-
-            Log.d(LOG_TAG, "原始公钥长度: ${base64PubKey.length}")
-            Log.d(LOG_TAG, "清理后公钥长度: ${cleanedKey.length}")
-            Log.d(LOG_TAG, "公钥前20字符: ${cleanedKey.take(20)}")
-            Log.d(LOG_TAG, "公钥后20字符: ${cleanedKey.takeLast(20)}")
-
-            // 解码Base64（使用NO_WRAP标志，避免自动添加换行符）
-            val keyBytes = android.util.Base64.decode(cleanedKey, android.util.Base64.NO_WRAP)
-            Log.d(LOG_TAG, "解码后字节数组长度: ${keyBytes.size}")
-            Log.d(LOG_TAG, "字节数组前8字节: ${keyBytes.take(8).joinToString(" ") { "%02X".format(it) }}")
-
-            // 尝试使用 X.509 格式解析公钥
-            val keySpec = java.security.spec.X509EncodedKeySpec(keyBytes)
-            val keyFactory = java.security.KeyFactory.getInstance("RSA")
-            return keyFactory.generatePublic(keySpec)
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "解析公钥失败: ${e.message}", e)
-            throw e
-        }
-    }
-
-    /**
      * 处理接收到的完整数据
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun processReceivedData(
-        mergedData: ByteArray,
-        deviceAddress: String,
-    ) {
+    private fun processReceivedData(mergedData: ByteArray) {
         try {
             val jsonString = String(mergedData, Charsets.UTF_8)
             val bleData = decodeFromString<BleData>(jsonString)
@@ -346,45 +254,7 @@ class BleManager(
                     clipboardManager.setPrimaryClip(clip)
                     Log.i(LOG_TAG, "已将接收到的文本设置到剪贴板: ${bleData.data}")
                 }
-                "get_cert" -> {
-                    Log.i(LOG_TAG, "收到 get_cert 请求，开始生成证书")
-                    coroutineScope.launch {
-                        try {
-                            val tempCert = certManager.generateTempCertificate()
-                            val certJson = encodeToString(tempCert)
-                            val responseData = BleData(type = "set_cert", data = certJson)
-                            val data = encodeToString(responseData).toByteArray(Charsets.UTF_8)
-                            val device = _connectedDevices.value.find { it.address == deviceAddress }
-                            if (device != null) {
-                                sendDataToDevice(device, data)
-                                Log.i(LOG_TAG, "成功发送证书到设备 ${device.address}")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(LOG_TAG, "生成或发送证书失败: ${e.message}", e)
-                        }
-                    }
-                }
-                "files" -> {
-                    Log.i(LOG_TAG, "收到 files 类型数据，开始处理文件下载")
-                    coroutineScope.launch {
-                        try {
-                            val filesShareData = decodeFromString<FilesShareData>(bleData.data)
-                            Log.i(
-                                LOG_TAG,
-                                "收到 ${filesShareData.files.size} 个文件，端口: ${filesShareData.port}",
-                            )
 
-                            // 解析服务器公钥（从Base64）
-                            val serverPublicKey = parsePublicKeyFromBase64(filesShareData.pubKey)
-
-                            // 添加下载任务
-                            downloadManager.addDownloadTasks(filesShareData, serverPublicKey)
-                            Log.i(LOG_TAG, "文件下载任务已添加")
-                        } catch (e: Exception) {
-                            Log.e(LOG_TAG, "处理文件下载失败: ${e.message}", e)
-                        }
-                    }
-                }
                 else -> {
                     Log.w(LOG_TAG, "未知的数据类型: ${bleData.type}")
                 }
@@ -459,93 +329,11 @@ class BleManager(
         }
     }
 
-    /**
-     * 发送数据到指定设备（通用方法）
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private suspend fun sendDataToDevice(
-        device: BluetoothDevice,
-        data: ByteArray,
-    ) {
-        val gatt = _connectedGattMap.value[device.address] ?: return
-        val mtu = devicePayloadSizeMap[device.address] ?: DEFAULT_PAYLOAD_SIZE
-        val characteristic = gatt.getDataCharacteristic()
-        if (characteristic == null) {
-            _connectedDevices.value =
-                _connectedDevices.value
-                    .filter {
-                        it.address != device.address
-                    }.toMutableList()
-            return
-        }
-
-        try {
-            fragmentHandler.sendFragmentedData(gatt, characteristic, data, mtu) { g, c, d ->
-                writeCharacteristic(g, c, d, 0)
-            }
-        } catch (e: Exception) {
-            Log.e(LOG_TAG, "发送数据失败: ${e.message}", e)
-            throw e
-        }
-    }
-
-    /**
-     * 发送文本到指定设备
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    suspend fun sendTextToDevice(
-        device: BluetoothDevice,
-        text: String,
-    ) {
-        val bleData = BleData(type = "text", data = text)
-        val data = encodeToString(bleData).toByteArray(Charsets.UTF_8)
-        sendDataToDevice(device, data)
-        Log.i(LOG_TAG, "成功发送文本到设备 ${device.address}")
-    }
-
-    /**
-     * 发送文件信息到指定设备
-     * @param device 目标设备
-     * @param ips 本机的所有IP地址列表
-     * @param port WebServer的端口
-     * @param pubKey WebServer的公钥（Base64编码）
-     * @param files 文件列表，包含endpoint、fileName、fileSize
-     */
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    suspend fun sendFilesToDevice(
-        device: BluetoothDevice,
-        ips: List<String>,
-        port: Int,
-        pubKey: String,
-        files: List<FileInfoData>,
-    ) {
-        if (!_connectedGattMap.value.contains(device.address)) {
-            throw Exception("设备未连接: ${device.address}")
-        }
-
-        // 构造文件分享数据
-        val filesShareData =
-            FilesShareData(
-                ips = ips,
-                port = port,
-                pubKey = pubKey,
-                files = files,
-            )
-
-        // 将文件分享数据序列化为JSON字符串
-        val dataJson = encodeToString(filesShareData)
-
-        // 创建ClipboardData，类型为"files"
-        val bleData = BleData(type = "files", data = dataJson)
-        val data = encodeToString(bleData).toByteArray(Charsets.UTF_8)
-        sendDataToDevice(device, data)
-        Log.i(LOG_TAG, "成功发送文件信息到设备 ${device.address}")
-    }
-
     fun startScan(scanCallback: ActivityResultLauncher<IntentSenderRequest>) {
         deviceManager.associate(
             pairingRequest,
             object : CompanionDeviceManager.Callback() {
+                @Deprecated("Deprecated in Java")
                 override fun onDeviceFound(intentSender: IntentSender) {
                     val request = IntentSenderRequest.Builder(intentSender).build()
                     scanCallback.launch(request)
@@ -651,11 +439,18 @@ class BleManager(
                 }
                 gatt.requestMtu(MAX_MTU_SIZE)
                 when (gatt.device.bondState) {
-                    BluetoothDevice.BOND_BONDED -> gatt.discoverServices()
-                    BluetoothDevice.BOND_NONE -> gatt.device.createBond()
+                    BluetoothDevice.BOND_BONDED -> {
+                        gatt.discoverServices()
+                    }
+
+                    BluetoothDevice.BOND_NONE -> {
+                        gatt.device.createBond()
+                    }
+
                     BluetoothDevice.BOND_BONDING -> {}
                 }
             }
+
             BluetoothProfile.STATE_DISCONNECTED -> {
                 Log.i(LOG_TAG, "GATT Disconnected: ${gatt.device.address}")
                 val deviceAddress = gatt.device.address
@@ -700,12 +495,14 @@ class BleManager(
                 BluetoothGatt.GATT_SUCCESS -> {
                     Log.i(LOG_TAG, "CCCD写入成功，等待指示数据")
                 }
+
                 BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION,
                 BluetoothGatt.GATT_INSUFFICIENT_ENCRYPTION,
                 -> {
                     Log.i(LOG_TAG, "需要配对/加密，发起配对后重试")
                     gatt.device.createBond()
                 }
+
                 else -> {
                     Log.w(LOG_TAG, "CCCD写入失败，status=$status")
                 }
@@ -734,7 +531,6 @@ class BleManager(
                 BluetoothGattDescriptor.ENABLE_INDICATION_VALUE,
             )
         if (writeResult) {
-            Log.i(LOG_TAG, "已订阅")
             // 优化：检查是否存在，避免不必要的列表创建
             val currentDevices = _connectedDevices.value
             if (currentDevices.none { it.address == gatt.device.address }) {
@@ -760,7 +556,7 @@ class BleManager(
 
         // 如果接收完整，处理完整数据
         if (mergedData != null) {
-            processReceivedData(mergedData, deviceAddress)
+            processReceivedData(mergedData)
         }
     }
 }

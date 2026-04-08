@@ -1,10 +1,8 @@
 package com.h3110w0r1d.geekpaste.di
 
 import android.content.Context
-import com.h3110w0r1d.geekpaste.data.config.ConfigManager
+import com.h3110w0r1d.geekpaste.data.ConfigManager
 import com.h3110w0r1d.geekpaste.utils.BleManager
-import com.h3110w0r1d.geekpaste.utils.CertManager
-import com.h3110w0r1d.geekpaste.utils.DownloadManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,7 +18,5 @@ object BleManagerModule {
     fun provideBleManager(
         @ApplicationContext context: Context,
         configManager: ConfigManager,
-        certManager: CertManager,
-        downloadManager: DownloadManager,
-    ): BleManager = BleManager(context, configManager, certManager, downloadManager)
+    ): BleManager = BleManager(context, configManager)
 }
